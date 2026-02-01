@@ -34,22 +34,34 @@ export const transactionService = {
 
   async getAll() {
     try {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('id, user_id, date, type, description, amount, envelope_id, created_at')
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false });
+      const pageSize = 1000;
+      const allRows: any[] = [];
+      let from = 0;
 
-      if (error) throw error;
+      while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('id, user_id, date, type, description, amount, envelope_id, created_at')
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .range(from, to);
 
-      return (data || []).map((tx: any) => ({
+        if (error) throw error;
+        const page = data || [];
+        allRows.push(...page);
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+
+      return allRows.map((tx: any) => ({
         id: tx.id,
         user_id: tx.user_id,
         date: tx.date,
         type: tx.type,
         description: tx.description,
         amount: tx.type === 'debit' ? -Math.abs(Number(tx.amount)) : Math.abs(Number(tx.amount)),
-        envelopeId: tx.envelope_id,
+        envelopeId: (tx.envelope_id != null && tx.envelope_id !== '') ? tx.envelope_id : null,
         created_at: tx.created_at
       })) as Transaction[];
     } catch (error) {
@@ -147,7 +159,8 @@ export const transactionService = {
     const { error } = await supabase
       .from('transactions')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw error;
 

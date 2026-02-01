@@ -1,16 +1,17 @@
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Navbar } from './components/Navbar';
-import { EnvelopeBoard } from './components/EnvelopeBoard';
-import { FinancialSummary } from './components/FinancialSummary';
-import { TransactionTable } from './components/TransactionTable';
-import { Modal } from './components/Modal';
-import { Button } from './components/Button';
-import { useToast } from './contexts/ToastContext';
-import { Envelope, Transaction, EnvelopeType } from './types';
-import { envelopeService } from './services/envelopeService';
-import { transactionService } from './services/transactionService';
-import { supabase } from './lib/supabase';
-import { useAuth } from './contexts/AuthContext';
+import { Navbar } from '../components/Navbar';
+import { EnvelopeBoard } from '../components/EnvelopeBoard';
+import { FinancialSummary } from '../components/FinancialSummary';
+import { TransactionTable } from '../components/TransactionTable';
+import { Modal } from '../components/Modal';
+import { Button } from '../components/Button';
+import { useToast } from '../contexts/ToastContext';
+import { Envelope, Transaction, EnvelopeType } from '../types';
+import { envelopeService } from '../services/envelopeService';
+import { transactionService } from '../services/transactionService';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const Home: React.FC = () => {
@@ -36,9 +37,11 @@ const Home: React.FC = () => {
 
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const isMounted = useRef(true);
+  const fetchIdRef = useRef(0);
 
   const fetchData = useCallback(async (isSilent = false) => {
     if (!user) return;
+    const myFetchId = ++fetchIdRef.current;
     if (!isSilent) setIsInitialLoading(true);
     
     try {
@@ -47,7 +50,7 @@ const Home: React.FC = () => {
         transactionService.getAll()
       ]);
 
-      if (isMounted.current) {
+      if (isMounted.current && myFetchId === fetchIdRef.current) {
         setEnvelopes(envs || []);
         setTransactions(txs || []);
         setIsError(false);
@@ -69,6 +72,7 @@ const Home: React.FC = () => {
 
     if (!user) return;
 
+    // Subscrições Realtime
     const envChannel = supabase
       .channel('home-envs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'envelopes', filter: `user_id=eq.${user.id}` }, () => fetchData(true))
@@ -86,14 +90,43 @@ const Home: React.FC = () => {
     };
   }, [user, fetchData]);
 
-  const handleTransfer = async (fromId: string, toId: string, amount: number) => {
-    setProcessing(p => ({ ...p, transfer: true }));
+  const handleBulkDeleteTransactions = async (ids: string[]) => {
+    console.log('🏠 [Home] Executando exclusão em massa');
+    setProcessing(p => ({ ...p, bulkDelete: true }));
     try {
-      await envelopeService.transfer(fromId, toId, amount);
+      await transactionService.bulkDelete(ids);
+      console.log('✅ Bulk delete concluído no banco de dados');
+      
+      // Atualização reativa em vez de reload
       await fetchData(true);
-      addToast('Transferência realizada!', 'success');
-    } catch (e) { addToast('Erro na transferência.', 'error'); }
-    finally { setProcessing(p => ({ ...p, transfer: false })); }
+      addToast(`${ids.length} transação(ões) excluída(s).`, 'success');
+    } catch (error) {
+      console.error('❌ Erro crítico no bulk delete:', error);
+      addToast('Erro ao realizar exclusão em massa.', 'error');
+    } finally {
+      if (isMounted.current) setProcessing(p => ({ ...p, bulkDelete: false }));
+    }
+  };
+
+  const handleBulkUpdateTransactions = async (
+    ids: string[],
+    envelopeId: string | null
+  ) => {
+    console.log('🏠 [Home] Executando atualização em massa');
+    setProcessing(p => ({ ...p, bulkUpdate: true }));
+    try {
+      await transactionService.bulkUpdateEnvelope(ids, envelopeId);
+      console.log('✅ Bulk update concluído no banco de dados');
+      
+      // Atualização reativa em vez de reload
+      await fetchData(true);
+      addToast('Atualização em massa concluída!', 'success');
+    } catch (error) {
+      console.error('❌ Erro crítico no bulk update:', error);
+      addToast('Erro ao realizar atualização em massa.', 'error');
+    } finally {
+      if (isMounted.current) setProcessing(p => ({ ...p, bulkUpdate: false }));
+    }
   };
 
   const handleCreateTransaction = async (data: any) => {
@@ -116,16 +149,6 @@ const Home: React.FC = () => {
     finally { setProcessing(p => ({ ...p, updateTransaction: false })); }
   };
 
-  const handleBulkDelete = async (ids: string[]) => {
-    setProcessing(p => ({ ...p, bulkDelete: true }));
-    try {
-      await transactionService.bulkDelete(ids);
-      await fetchData(true);
-      addToast(`${ids.length} transações excluídas.`, 'success');
-    } catch (e) { addToast('Erro ao excluir transações.', 'error'); }
-    finally { setProcessing(p => ({ ...p, bulkDelete: false })); }
-  };
-
   const confirmDeleteTransaction = async () => {
     if (!transactionToDelete) return;
     setProcessing(p => ({ ...p, deleteTransaction: true }));
@@ -135,7 +158,7 @@ const Home: React.FC = () => {
       await fetchData(true);
       addToast('Lançamento excluído.', 'success');
     } catch (e) { addToast('Erro ao excluir.', 'error'); }
-    finally { setProcessing(p => ({ ...p, deleteTransaction: false })); }
+    finally { if (isMounted.current) setProcessing(p => ({ ...p, deleteTransaction: false })); }
   };
 
   if (isInitialLoading && envelopes.length === 0) {
@@ -143,7 +166,7 @@ const Home: React.FC = () => {
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
-          <p className="text-gray-500 dark:text-gray-400 animate-pulse font-medium">Carregando painel...</p>
+          <p className="text-gray-500 dark:text-gray-400 animate-pulse font-medium">Carregando MoneyDash...</p>
         </div>
       </div>
     );
@@ -174,7 +197,12 @@ const Home: React.FC = () => {
           <EnvelopeBoard 
             envelopes={envelopes} 
             setEnvelopes={setEnvelopes}
-            onTransfer={handleTransfer}
+            onTransfer={async (f, t, a) => {
+              setProcessing(p => ({ ...p, transfer: true }));
+              try { await envelopeService.transfer(f, t, a); await fetchData(true); addToast('Transferência ok!'); }
+              catch(e) { addToast('Erro na transferência', 'error'); }
+              finally { setProcessing(p => ({ ...p, transfer: false })); }
+            }}
             onCreateEnvelope={async (d) => {
               setProcessing(p => ({ ...p, createEnvelope: true }));
               try { await envelopeService.create({ ...d, amount: 0 }); await fetchData(true); addToast('Envelope criado!'); }
@@ -207,17 +235,12 @@ const Home: React.FC = () => {
             transactions={transactions}
             envelopes={envelopes}
             onDelete={(id) => setTransactionToDelete(id)}
-            onBulkDelete={handleBulkDelete}
+            onBulkDelete={handleBulkDeleteTransactions}
             onUpdateEnvelope={async (txId, envId) => {
               try { await transactionService.updateEnvelope(txId, envId || null); await fetchData(true); addToast('Atualizado!'); }
               catch(e) { addToast('Erro ao atualizar', 'error'); }
             }}
-            onBulkUpdateEnvelope={async (ids, envId) => {
-              setProcessing(p => ({ ...p, bulkUpdate: true }));
-              try { await transactionService.bulkUpdateEnvelope(ids, envId || null); await fetchData(true); addToast('Atualizados!'); }
-              catch(e) { addToast('Erro na atualização', 'error'); }
-              finally { setProcessing(p => ({ ...p, bulkUpdate: false })); }
-            }}
+            onBulkUpdateEnvelope={handleBulkUpdateTransactions}
             onAddTransaction={handleCreateTransaction}
             onUpdateTransaction={handleUpdateTransaction}
             onRefresh={() => fetchData(true)}

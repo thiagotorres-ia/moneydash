@@ -11,34 +11,23 @@ export const FinancialSummary: React.FC<FinancialSummaryProps> = ({ transactions
   // Cálculo centralizado e memoizado para performance
   const { totalBalance, distributed, undistributed } = useMemo(() => {
     const totals = transactions.reduce((acc, txn) => {
-      // Garantir que o valor seja numérico e absoluto para controle total do sinal aqui
       const amount = Math.abs(Number(txn.amount) || 0);
       const isCredit = txn.type === 'credit';
       const signedValue = isCredit ? amount : -amount;
 
-      // 1. Saldo Total (Independente de envelope)
       acc.totalBalance += signedValue;
-
-      // 2. Comprometido (Apenas se tiver envelope_id)
-      // Usamos uma verificação rigorosa para null/undefined
-      if (txn.envelopeId !== null && txn.envelopeId !== undefined && txn.envelopeId !== '') {
+      if (txn.envelopeId != null && txn.envelopeId !== '') {
         acc.distributed += signedValue;
       }
-
       return acc;
     }, { totalBalance: 0, distributed: 0 });
 
-    // Debug para validação em desenvolvimento (remova em produção se necessário)
-    // console.log('Financial Calculation Debug:', { 
-    //   count: transactions.length, 
-    //   total: totals.totalBalance, 
-    //   dist: totals.distributed 
-    // });
-
+    const totalBalanceRounded = Math.round(totals.totalBalance * 100) / 100;
+    const distributedRounded = Math.round(totals.distributed * 100) / 100;
     return {
-      totalBalance: totals.totalBalance,
-      distributed: totals.distributed,
-      undistributed: totals.totalBalance - totals.distributed
+      totalBalance: totalBalanceRounded,
+      distributed: distributedRounded,
+      undistributed: totalBalanceRounded - distributedRounded
     };
   }, [transactions]);
 
