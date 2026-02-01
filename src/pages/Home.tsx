@@ -7,7 +7,7 @@ import { TransactionTable } from '../components/TransactionTable';
 import { Modal } from '../components/Modal';
 import { Button } from '../components/Button';
 import { useToast } from '../contexts/ToastContext';
-import { Envelope, Transaction, EnvelopeType } from '../types';
+import { Envelope, Transaction } from '../types';
 import { envelopeService } from '../services/envelopeService';
 import { transactionService } from '../services/transactionService';
 import { supabase } from '../lib/supabase';
@@ -68,6 +68,9 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     isMounted.current = true;
+    if (import.meta.env.DEV) {
+      console.log('[Home] Efeito fetch/subscriptions executado', { userId: user?.id });
+    }
     fetchData();
 
     if (!user) return;
@@ -88,7 +91,7 @@ const Home: React.FC = () => {
       supabase.removeChannel(envChannel);
       supabase.removeChannel(txChannel);
     };
-  }, [user, fetchData]);
+  }, [user?.id, fetchData]);
 
   const handleBulkDeleteTransactions = async (ids: string[]) => {
     console.log('🏠 [Home] Executando exclusão em massa');
@@ -209,9 +212,9 @@ const Home: React.FC = () => {
               catch(e) { addToast('Erro ao criar envelope', 'error'); }
               finally { setProcessing(p => ({ ...p, createEnvelope: false })); }
             }}
-            onEditEnvelope={async (id, c, n, t) => {
+            onEditEnvelope={async (id, c, n, envelopeTypeId) => {
               setProcessing(p => ({ ...p, editEnvelope: true }));
-              try { await envelopeService.update(id, { code: c, name: n, type: t }); await fetchData(true); addToast('Envelope atualizado!'); }
+              try { await envelopeService.update(id, { code: c, name: n, envelope_type_id: envelopeTypeId }); await fetchData(true); addToast('Envelope atualizado!'); }
               catch(e) { addToast('Erro ao atualizar', 'error'); }
               finally { setProcessing(p => ({ ...p, editEnvelope: false })); }
             }}

@@ -8,6 +8,7 @@ import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
 import Home from './pages/Home';
 import CategoryManagement from './pages/CategoryManagement';
+import EnvelopeTypeManagement from './pages/EnvelopeTypeManagement';
 
 const FullPageLoader = () => (
   <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center text-primary-600">
@@ -40,6 +41,7 @@ const AppContent = () => {
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
       <Route path="/categorias" element={<ProtectedRoute><CategoryManagement /></ProtectedRoute>} />
+      <Route path="/tipos-envelope" element={<ProtectedRoute><EnvelopeTypeManagement /></ProtectedRoute>} />
       {/* Fallback para evitar URLs inválidas quebrando o fluxo */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

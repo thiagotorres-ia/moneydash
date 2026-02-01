@@ -1,0 +1,297 @@
+---
+alwaysApply: true
+---
+---
+title: Repo Standards
+priority: 0
+---
+
+Você é um agente de desenvolvimento trabalhando neste repositório MoneyDash (React 18 + TypeScript + Tailwind CSS + Supabase).
+
+Seu objetivo é entregar mudanças com alta manutenibilidade, evolução fácil e padrões consistentes.
+
+## Princípios (ordem de prioridade)
+
+1. **Seguir padrões existentes** do repo (estrutura de pastas, naming conventions, estilo de código).
+2. **Mudanças pequenas e revisáveis** (evitar "refazer o mundo" - princípio YAGNI).
+3. **Clareza > esperteza** (código explícito é melhor que código "inteligente").
+4. **Integridade de dados** (Supabase/Postgres): usar constraints, FKs e validações apropriadas.
+5. **Testabilidade mínima**: validar happy path + pelo menos 1 caso de borda relevante.
+6. **Mobile-first**: toda feature deve ser responsiva e funcional em dispositivos móveis.
+
+## Padrões de Código React/TypeScript
+
+### Estrutura de Componentes
+- **Sempre** use TypeScript com tipagem rigorosa (sem `any`, exceto casos extremos justificados).
+- **Props**: sempre defina interfaces explícitas para props de componentes.
+- **Hooks**: extraia lógica complexa em custom hooks quando houver repetição.
+- **Naming**:
+  - Componentes: `PascalCase` (ex: `TransactionModal.tsx`)
+  - Hooks: `camelCase` prefixado com `use` (ex: `useTransactions.ts`)
+  - Utilitários: `camelCase` (ex: `formatCurrency.ts`)
+  - Contextos: `PascalCase` + sufixo `Context` (ex: `AuthContext.tsx`)
+
+### State Management
+- **Preferir** useState e useContext para estado local/compartilhado simples.
+- **useMemo/useCallback**: usar quando houver cálculos pesados ou para prevenir re-renders desnecessários.
+- **useEffect**: sempre especificar dependências corretas (não ignore warnings do ESLint).
+- **useRef**: para valores que não devem causar re-render (isMounted, intervalIds, etc.).
+
+### Performance
+- **Evitar**:
+  - N+1 queries (usar JOINs ou batch requests)
+  - Renders excessivos (memoizar quando necessário)
+  - Chamadas redundantes de API (implementar cache básico se aplicável)
+  - Re-criação de funções inline em loops
+- **Virtualização**: considerar para listas com 100+ itens (já implementado em TransactionTable).
+
+### Responsividade (Mobile-First)
+
+#### Grid/Layout
+- **Breakpoints Tailwind** (usar consistentemente):
+```
+  default (mobile): sem prefixo
+  sm: 640px+
+  md: 768px+
+  lg: 1024px+
+  xl: 1280px+
+```
+- **Padrão mobile-first**: começar com layout mobile, adicionar breakpoints crescentes.
+```tsx
+  // ✅ Correto
+  className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8"
+  
+  // ❌ Errado
+  className="grid lg:grid-cols-8 md:grid-cols-6 sm:grid-cols-4 grid-cols-2"
+```
+
+#### Componentes UI
+- **Botões**: altura mínima de 44px (toque confortável).
+- **Inputs**: tamanho apropriado para digitação mobile (não usar `text-xs` em inputs).
+- **Modais**: devem ocupar quase 100% da tela em mobile, centralizar em desktop.
+- **Navegação**: hamburger menu em mobile, navbar completa em desktop.
+- **Touch targets**: mínimo 44x44px para elementos interativos.
+
+#### Textos
+- **Hierarquia visual clara**:
+  - Títulos: `text-lg sm:text-xl md:text-2xl`
+  - Corpo: `text-sm sm:text-base`
+  - Legendas: `text-xs`
+- **Truncate text** quando necessário: usar `truncate` com `title` attribute para tooltip.
+
+#### Espaçamento
+- **Padding responsivo**: `p-4 sm:p-6 lg:p-8`
+- **Gaps**: adaptar para não ficar muito apertado em mobile: `gap-2 sm:gap-4 lg:gap-6`
+
+### Tailwind CSS
+
+#### Organização de Classes
+```tsx
+// ✅ Boa ordem (sugestão)
+className="
+  flex items-center justify-between  // Layout
+  px-4 py-2                           // Spacing
+  text-sm font-medium                 // Typography
+  text-gray-700 dark:text-gray-300    // Colors
+  bg-white dark:bg-gray-800           // Background
+  border border-gray-200              // Borders
+  rounded-lg shadow-sm                // Effects
+  hover:bg-gray-50                    // States
+  transition-colors                   // Animations
+"
+```
+
+#### Dark Mode
+- **Sempre** adicionar variante dark para cores visíveis:
+```tsx
+  // ✅ Correto
+  className="text-gray-900 dark:text-white"
+  
+  // ❌ Errado (ilegível em dark mode)
+  className="text-gray-900"
+```
+
+#### Utilitários Customizados
+- Usar `@layer utilities` em `index.css` para animações/estilos reutilizáveis.
+- Evitar CSS inline ou `<style>` tags.
+
+### Supabase/Backend
+
+#### Queries
+- **Sempre** especificar colunas no `.select()` (não usar `*` em produção).
+- **Paginação**: usar `.range(from, to)` para datasets grandes.
+- **Filtros**: sempre filtrar por `user_id` para segurança.
+- **Ordenação**: explicitar `.order()` para consistência.
+
+#### Tratamento de Erros
+```typescript
+// ✅ Padrão recomendado
+try {
+  const { data, error } = await supabase.from('table').select('*');
+  if (error) throw error;
+  return data;
+} catch (err) {
+  console.error('Context da operação:', err);
+  addToast('Mensagem amigável ao usuário', 'error');
+  throw err; // Re-throw se o caller precisar tratar
+}
+```
+
+#### Realtime
+- Sempre fazer cleanup de subscriptions em `useEffect` return.
+- Usar `isMounted` ref para prevenir updates em componentes desmontados.
+
+### Acessibilidade (A11y)
+
+- **Semântica HTML**: usar tags corretas (`<button>`, `<nav>`, `<main>`, etc.).
+- **ARIA labels**: adicionar em ícones sem texto: `aria-label="Fechar modal"`.
+- **Foco**: garantir ordem lógica de tab, estilos visíveis de `:focus`.
+- **Contraste**: mínimo WCAG AA (verificar cores em dark mode também).
+- **Alt text**: sempre em imagens (mesmo que vazio para decorativas).
+
+### Estados de UI
+
+Todo componente que carrega dados deve ter:
+1. **Loading**: skeleton ou spinner com texto descritivo
+2. **Empty**: estado vazio com ilustração/ícone e CTA
+3. **Error**: mensagem clara + botão de retry
+4. **Success**: dados renderizados
+```tsx
+// ✅ Exemplo de padrão
+if (isLoading) return <LoadingState />;
+if (error) return <ErrorState onRetry={refetch} />;
+if (!data || data.length === 0) return <EmptyState />;
+return <DataView data={data} />;
+```
+
+## Restrições
+
+- **NÃO** introduza arquitetura complexa nova (CQRS, event sourcing, etc.) sem solicitação explícita.
+- **NÃO** adicione dependências npm sem:
+  1. Justificar necessidade
+  2. Verificar alternativa nativa/existente
+  3. Pedir aprovação
+- **NÃO** altere contratos existentes (rotas/DTOs/schemas/props) sem sinalizar breaking change e pedir aprovação.
+- **NÃO** toque em arquivos fora do escopo da task (minimize blast radius).
+- **NÃO** use `localStorage` ou `sessionStorage` sem justificativa (preferir Context API ou Supabase).
+- **NÃO** commit código comentado (remova ou documente o motivo).
+
+## Qualidade Mínima Esperada
+
+### Validação
+- **Client-side**: validação de forms com feedback imediato.
+- **Server-side**: validações críticas no Supabase (constraints, RLS policies).
+
+### Erros
+- **Mensagens padronizadas**:
+  - Usuário: claras, acionáveis, sem jargão técnico
+  - Debug: logs com contexto suficiente (sem dados sensíveis)
+- **Toast notifications**: usar `ToastContext` existente.
+
+### Logs
+- Pontos críticos: autenticação, mutações de dados, erros.
+- Formato: `console.error('[Contexto]:', erro)`.
+- **Nunca** logar: senhas, tokens, dados pessoais sensíveis.
+
+### Performance
+- **Web Vitals**: atentar para LCP, CLS, FID.
+- **Bundle size**: evitar imports desnecessários (tree-shaking).
+- **Imagens**: usar formatos modernos (WebP), lazy loading quando apropriado.
+
+## Evidências Obrigatórias em Toda Entrega
+
+Ao finalizar qualquer implementação, devolva:
+
+### 1. Arquivos Modificados
+```
+📝 Arquivos Criados/Alterados:
+- src/components/EnvelopeBoard.tsx (modificado)
+- src/types.ts (adicionado PaginationState)
+```
+
+### 2. Resumo de Mudanças
+```
+📋 Resumo por Arquivo:
+
+src/components/EnvelopeBoard.tsx:
+- Adicionado estado de paginação (currentPage, ITEMS_PER_PAGE)
+- Implementado ordenação dupla (tipo + nome alfabético)
+- Criado controles de navegação entre páginas
+- Atualizado grid para máximo 8 colunas
+```
+
+### 3. Comandos Executados
+```
+🔧 Comandos e Resultados:
+
+$ npm install
+✅ Sem novas dependências
+
+$ npm run dev
+✅ Servidor rodando em http://localhost:3000
+✅ Sem erros de compilação
+
+$ npm run lint
+✅ 0 errors, 0 warnings
+
+$ npm run build
+✅ Build concluído com sucesso
+```
+
+### 4. Checklist de Critérios de Aceite
+```
+✅ Critérios de Aceite:
+- [x] Grid com máximo 8 colunas em desktop
+- [x] Paginação funcional com 24 itens por página
+- [x] Ordenação: tipo → nome alfabético
+- [x] Botões anterior/próxima desabilitados corretamente
+- [x] Responsivo em mobile/tablet/desktop
+- [x] Drag & drop continua funcionando
+- [x] Sem erros de console
+```
+
+### 5. Assunções
+```
+🤔 Assunções Feitas:
+- Considerado que o Drag & Drop só precisa funcionar dentro da página atual (não entre páginas)
+- Usado símbolos ← e → para botões de navegação (sem dependência de ícones externos)
+- Paginação só aparece quando há mais de 24 envelopes
+```
+
+### 6. Screenshots (quando aplicável)
+- Desktop (lg)
+- Tablet (md)
+- Mobile (sm)
+
+### 7. Testes Manuais Realizados
+```
+✅ Testado:
+- [x] < 24 envelopes: sem paginação
+- [x] Exatamente 24 envelopes: página 1/1
+- [x] 25+ envelopes: paginação correta
+- [x] Navegação anterior/próxima
+- [x] Ordenação alfabética dentro de grupos
+- [x] Responsividade em 3 tamanhos de tela
+```
+
+## Fluxo de Trabalho Recomendado
+
+1. **Ler** a task completamente
+2. **Identificar** arquivos impactados
+3. **Verificar** padrões existentes nesses arquivos
+4. **Implementar** mudança minimal
+5. **Testar** localmente (dev + build)
+6. **Documentar** conforme template de evidências
+7. **Revisar** contra este arquivo de rules
+8. **Entregar** com evidências completas
+
+## Quando em Dúvida
+
+1. Pergunte antes de assumir
+2. Prefira o padrão existente à "melhor prática" genérica
+3. Documente a decisão em comentário se for não-óbvia
+4. Menos é mais: mudanças pequenas e focadas
+
+---
+
+**Última atualização**: 2026-02-01

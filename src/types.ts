@@ -26,7 +26,12 @@ export enum Theme {
   DARK = 'dark',
 }
 
-export type EnvelopeType = 'routine' | 'income' | 'investment' | 'fixed' | 'temporary';
+export interface EnvelopeTypeRecord {
+  id: string;
+  name: string;
+  slug: string;
+  relative_order: number;
+}
 
 export interface Envelope {
   id: string;
@@ -34,7 +39,8 @@ export interface Envelope {
   code: string;
   name: string;
   amount: number;
-  type: EnvelopeType;
+  envelope_type_id: string;
+  envelope_type_name?: string;
   created_at?: string;
 }
 

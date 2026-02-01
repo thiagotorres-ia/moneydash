@@ -1,29 +1,29 @@
-
 import { supabase } from '../lib/supabase';
-import { Envelope, EnvelopeType } from '../types';
+import { Envelope } from '../types';
 import { transactionService } from './transactionService';
 
 export const envelopeService = {
   async getAll() {
     const { data, error } = await supabase
       .from('envelopes')
-      .select('*')
+      .select('id, user_id, code, name, amount, envelope_type_id, created_at')
       .order('code', { ascending: true });
-    
+
     if (error) throw error;
-    
-    return data.map((env: any) => ({
+
+    return (data ?? []).map((env: Record<string, unknown>) => ({
       id: env.id,
       user_id: env.user_id,
       code: env.code,
       name: env.name,
       amount: env.amount,
-      type: env.type_slug as EnvelopeType,
-      created_at: env.created_at
+      envelope_type_id: env.envelope_type_id,
+      envelope_type_name: undefined,
+      created_at: env.created_at,
     })) as Envelope[];
   },
 
-  async create(envelope: Omit<Envelope, 'id' | 'user_id' | 'created_at'>) {
+  async create(envelope: Omit<Envelope, 'id' | 'user_id' | 'created_at' | 'envelope_type_name'>) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
@@ -33,8 +33,8 @@ export const envelopeService = {
         user_id: user.id,
         code: envelope.code,
         name: envelope.name,
-        type_slug: envelope.type,
-        amount: envelope.amount || 0
+        envelope_type_id: envelope.envelope_type_id,
+        amount: envelope.amount || 0,
       }])
       .select()
       .single();
@@ -45,20 +45,17 @@ export const envelopeService = {
       code: data.code,
       name: data.name,
       amount: data.amount,
-      type: data.type_slug as EnvelopeType
+      envelope_type_id: data.envelope_type_id,
     };
   },
 
-  async update(id: string, envelope: Partial<Envelope>) {
-    const updates: any = {};
-    if (envelope.code) updates.code = envelope.code;
-    if (envelope.name) updates.name = envelope.name;
-    if (envelope.type) updates.type_slug = envelope.type;
+  async update(id: string, envelope: Partial<Pick<Envelope, 'code' | 'name' | 'envelope_type_id'>>) {
+    const updates: Record<string, unknown> = {};
+    if (envelope.code != null) updates.code = envelope.code;
+    if (envelope.name != null) updates.name = envelope.name;
+    if (envelope.envelope_type_id != null) updates.envelope_type_id = envelope.envelope_type_id;
 
-    const { error } = await supabase
-      .from('envelopes')
-      .update(updates)
-      .eq('id', id);
+    const { error } = await supabase.from('envelopes').update(updates).eq('id', id);
 
     if (error) throw error;
   },

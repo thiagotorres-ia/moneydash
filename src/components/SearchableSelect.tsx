@@ -114,7 +114,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 >
                   <div className="flex flex-col min-w-0 pr-2">
                     <span className="truncate">{opt.name}</span>
-                    <span className="text-[10px] text-gray-400 font-mono">{opt.type.toUpperCase()}</span>
+                    {opt.envelope_type_name && (
+                      <span className="text-[10px] text-gray-400 font-mono">{opt.envelope_type_name}</span>
+                    )}
                   </div>
                   <span className="text-xs bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded text-gray-500 dark:text-gray-300 font-mono font-bold flex-shrink-0">
                     {opt.code}

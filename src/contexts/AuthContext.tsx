@@ -3,6 +3,8 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { AuthContextType, User } from '../types';
 import { supabase } from '../lib/supabase';
 
+const LOGIN_TIMEOUT_MS = 15000;
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -66,14 +68,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        if (session?.user) {
-          const userData = await fetchProfile(session.user.id, session.user.email!, session.user.user_metadata);
-          setUser(userData);
+        try {
+          if (session?.user) {
+            const userData = await fetchProfile(session.user.id, session.user.email!, session.user.user_metadata);
+            setUser(userData);
+          }
+        } catch (err) {
+          console.error('[Auth] fetchProfile falhou:', err);
+          if (session?.user) {
+            const fallbackUser: User = {
+              id: session.user.id,
+              email: session.user.email ?? '',
+              name: session.user.user_metadata?.name || 'Usuário',
+              avatar: session.user.user_metadata?.avatar_url
+            };
+            setUser(fallbackUser);
+          }
+        } finally {
+          setIsLoading(false);
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
+        setIsLoading(false);
+      } else {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     });
 
     return () => {
@@ -86,12 +105,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     setError(null);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), LOGIN_TIMEOUT_MS)
+      );
+      const { error } = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password: pass }),
+        timeoutPromise
+      ]);
       if (error) throw error;
     } catch (err: any) {
-      setError(err.message || 'Falha ao fazer login');
-      setIsLoading(false);
+      if (err?.message === 'timeout') {
+        console.warn('[Auth] Login timeout após', LOGIN_TIMEOUT_MS, 'ms');
+        setError('Tempo esgotado. Tente novamente.');
+      } else {
+        setError(err?.message || 'Falha ao fazer login');
+      }
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 

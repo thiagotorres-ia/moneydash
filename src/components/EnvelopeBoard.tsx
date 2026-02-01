@@ -1,50 +1,60 @@
-
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  DndContext, 
-  closestCenter, 
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import {
+  DndContext,
+  closestCenter,
   PointerSensor,
-  useSensor, 
-  useSensors, 
-  DragEndEvent 
+  useSensor,
+  useSensors,
+  DragEndEvent,
 } from '@dnd-kit/core';
-import { 
-  arrayMove, 
-  SortableContext, 
-  rectSortingStrategy, 
-  useSortable 
+import {
+  arrayMove,
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ArrowRightLeft, Plus, Pencil, Trash2, LayoutGrid } from 'lucide-react';
-import { Envelope, EnvelopeType } from '../types';
+import { Envelope, EnvelopeTypeRecord } from '../types';
 import { formatCurrency } from '../utils/format';
 import { Button } from './Button';
 import { Modal } from './Modal';
 import { Input } from './Input';
 import { SearchableSelect } from './SearchableSelect';
+import { envelopeTypeService } from '../services/envelopeTypeService';
 
-const ENVELOPE_CONFIG: Record<EnvelopeType, { label: string; order: number; borderColor: string }> = {
-  routine: { label: 'Rotina', order: 1, borderColor: 'border-blue-400 dark:border-blue-500' },
-  income: { label: 'Receitas', order: 2, borderColor: 'border-emerald-400 dark:border-emerald-500' },
-  investment: { label: 'Investimentos', order: 3, borderColor: 'border-purple-400 dark:border-purple-500' },
-  fixed: { label: 'Despesas Fixas', order: 4, borderColor: 'border-indigo-400 dark:border-indigo-500' },
-  temporary: { label: 'Temporários', order: 5, borderColor: 'border-teal-400 dark:border-teal-500' },
-};
+const BORDER_COLORS = [
+  'border-blue-400 dark:border-blue-500',
+  'border-emerald-400 dark:border-emerald-500',
+  'border-purple-400 dark:border-purple-500',
+  'border-indigo-400 dark:border-indigo-500',
+  'border-teal-400 dark:border-teal-500',
+  'border-amber-400 dark:border-amber-500',
+];
+
+// 8 colunas × 3 linhas = máximo 24 itens visíveis por página
+const ITEMS_PER_PAGE = 24;
 
 interface EnvelopeProps {
   envelope: Envelope;
+  typeIndex: number;
   onEdit: (envelope: Envelope) => void;
   onDelete: (envelope: Envelope) => void;
 }
 
-const SortableEnvelopeCard: React.FC<EnvelopeProps> = ({ envelope, onEdit, onDelete }) => {
-  const { 
-    attributes, 
-    listeners, 
-    setNodeRef, 
-    transform, 
-    transition, 
-    isDragging 
+const SortableEnvelopeCard: React.FC<EnvelopeProps> = ({
+  envelope,
+  typeIndex,
+  onEdit,
+  onDelete,
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
   } = useSortable({ id: envelope.id });
 
   const style = {
@@ -54,7 +64,8 @@ const SortableEnvelopeCard: React.FC<EnvelopeProps> = ({ envelope, onEdit, onDel
     opacity: isDragging ? 0.5 : undefined,
   };
 
-  const config = ENVELOPE_CONFIG[envelope.type];
+  const borderColor =
+    BORDER_COLORS[typeIndex % BORDER_COLORS.length] ?? 'border-gray-400 dark:border-gray-500';
 
   return (
     <div
@@ -65,7 +76,7 @@ const SortableEnvelopeCard: React.FC<EnvelopeProps> = ({ envelope, onEdit, onDel
       title={`${envelope.code} - ${envelope.name}`}
       className={`
         bg-white dark:bg-gray-800 p-1.5 rounded-lg border-l-2 transition-all duration-200 group relative cursor-grab active:cursor-grabbing touch-none
-        ${config.borderColor}
+        ${borderColor}
         ${isDragging 
           ? 'shadow-xl ring-2 ring-primary-500/20 scale-105 border-t border-r border-b border-gray-200 dark:border-gray-700' 
           : 'shadow-sm border-t border-r border-b border-gray-100 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md'
@@ -122,8 +133,8 @@ interface EnvelopeBoardProps {
   envelopes: Envelope[];
   setEnvelopes: (envelopes: Envelope[]) => void;
   onTransfer: (fromId: string, toId: string, amount: number) => Promise<void>;
-  onCreateEnvelope: (data: { code: string; name: string, type: EnvelopeType }) => void;
-  onEditEnvelope: (id: string, code: string, name: string, type: EnvelopeType) => void;
+  onCreateEnvelope: (data: { code: string; name: string; envelope_type_id: string }) => void;
+  onEditEnvelope: (id: string, code: string, name: string, envelope_type_id: string) => void;
   onDeleteEnvelope: (id: string) => void;
   isCreating: boolean;
   isEditing: boolean;
@@ -148,28 +159,67 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
   const [transferTo, setTransferTo] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
 
+  const [envelopeTypes, setEnvelopeTypes] = useState<EnvelopeTypeRecord[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingEnvelope, setEditingEnvelope] = useState<Envelope | null>(null);
   const [envCode, setEnvCode] = useState('');
   const [envName, setEnvName] = useState('');
-  const [envType, setEnvType] = useState<EnvelopeType>('routine');
+  const [envTypeId, setEnvTypeId] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  const fetchEnvelopeTypes = useCallback(async () => {
+    try {
+      const types = await envelopeTypeService.getAll();
+      setEnvelopeTypes(types);
+      setEnvTypeId((prev) => (prev || types[0]?.id) ?? '');
+    } catch (err) {
+      console.error('[EnvelopeBoard] Erro ao buscar tipos:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEnvelopeTypes();
+  }, [fetchEnvelopeTypes]);
 
   const [deletingEnvelope, setDeletingEnvelope] = useState<Envelope | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [currentPage, setCurrentPage] = useState(0);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
+  const typeOrderMap = useMemo(() => {
+    const m = new Map<string, number>();
+    envelopeTypes.forEach((t, i) => m.set(t.id, i));
+    return m;
+  }, [envelopeTypes]);
+
+  // 1. Ordenação: primeiro por tipo (relative_order), depois por nome (alfabético pt-BR)
   const sortedEnvelopes = useMemo(() => {
     return [...envelopes].sort((a, b) => {
-      const orderA = ENVELOPE_CONFIG[a.type].order;
-      const orderB = ENVELOPE_CONFIG[b.type].order;
+      const orderA = typeOrderMap.get(a.envelope_type_id) ?? 999;
+      const orderB = typeOrderMap.get(b.envelope_type_id) ?? 999;
       if (orderA !== orderB) return orderA - orderB;
-      return 0; 
+      return a.name.localeCompare(b.name, 'pt-BR');
     });
-  }, [envelopes]);
+  }, [envelopes, typeOrderMap]);
+
+  // 2. Paginação: slice da lista ordenada para a página atual
+  const sortedAndPaginatedEnvelopes = useMemo(() => {
+    const startIndex = currentPage * ITEMS_PER_PAGE;
+    return sortedEnvelopes.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [sortedEnvelopes, currentPage]);
+
+  const totalPages = useMemo(
+    () => Math.ceil(envelopes.length / ITEMS_PER_PAGE),
+    [envelopes.length]
+  );
+
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [envelopes.length]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -186,7 +236,7 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
     setEditingEnvelope(env);
     setEnvCode(env.code);
     setEnvName(env.name);
-    setEnvType(env.type);
+    setEnvTypeId(env.envelope_type_id);
     setFormError(null);
     setIsCreateModalOpen(true);
   };
@@ -195,7 +245,7 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
     setEditingEnvelope(null);
     setEnvCode('');
     setEnvName('');
-    setEnvType('routine');
+    setEnvTypeId(envelopeTypes[0]?.id ?? '');
     setFormError(null);
     setIsCreateModalOpen(true);
   };
@@ -218,14 +268,14 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!envCode.trim() || !envName.trim()) {
+    if (!envCode.trim() || !envName.trim() || !envTypeId) {
       setFormError('Preencha todos os campos.');
       return;
     }
     if (editingEnvelope) {
-      await onEditEnvelope(editingEnvelope.id, envCode.trim(), envName.trim(), envType);
+      await onEditEnvelope(editingEnvelope.id, envCode.trim(), envName.trim(), envTypeId);
     } else {
-      await onCreateEnvelope({ code: envCode.trim(), name: envName.trim(), type: envType });
+      await onCreateEnvelope({ code: envCode.trim(), name: envName.trim(), envelope_type_id: envTypeId });
     }
     setIsCreateModalOpen(false);
   };
@@ -275,12 +325,13 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
       </div>
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={sortedEnvelopes} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-12 gap-1.5">
-            {sortedEnvelopes.map((env) => (
-              <SortableEnvelopeCard 
-                key={env.id} 
-                envelope={env} 
+        <SortableContext items={sortedAndPaginatedEnvelopes} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1.5">
+            {sortedAndPaginatedEnvelopes.map((env) => (
+              <SortableEnvelopeCard
+                key={env.id}
+                envelope={env}
+                typeIndex={typeOrderMap.get(env.envelope_type_id) ?? 0}
                 onEdit={openEditModal}
                 onDelete={requestDelete}
               />
@@ -288,6 +339,30 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
           </div>
         </SortableContext>
       </DndContext>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-4 mt-6 pt-4 border-t border-gray-100 dark:border-gray-800">
+          <button
+            onClick={() => setCurrentPage(p => p - 1)}
+            disabled={currentPage === 0}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            type="button"
+          >
+            ← Anterior
+          </button>
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            Página {currentPage + 1} de {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(p => p + 1)}
+            disabled={currentPage === totalPages - 1}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            type="button"
+          >
+            Próxima →
+          </button>
+        </div>
+      )}
 
       {/* Transfer Modal */}
       <Modal
@@ -353,22 +428,27 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
       >
         <form onSubmit={handleFormSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label htmlFor="envelope-type-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Tipo do Envelope
               </label>
               <select
-                value={envType}
-                onChange={(e) => setEnvType(e.target.value as EnvelopeType)}
+                id="envelope-type-select"
+                value={envTypeId}
+                onChange={(e) => setEnvTypeId(e.target.value)}
                 required
-                disabled={isCreating || isEditing}
+                disabled={isCreating || isEditing || envelopeTypes.length === 0}
                 className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2.5 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                aria-label="Selecione o tipo do envelope"
               >
-                {Object.entries(ENVELOPE_CONFIG)
-                  .sort(([, a], [, b]) => a.order - b.order)
-                  .map(([key, config]) => (
-                    <option key={key} value={key}>{config.label}</option>
+                {envelopeTypes.length === 0 ? (
+                  <option value="">Cadastre tipos em Gerenciar Tipos de Envelope</option>
+                ) : (
+                  envelopeTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
                   ))
-                }
+                )}
               </select>
             </div>
             <Input label="Código" placeholder="Ex: ALIM" value={envCode} onChange={(e) => setEnvCode(e.target.value.toUpperCase())} required maxLength={6} disabled={isCreating || isEditing} />

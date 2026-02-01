@@ -9,3 +9,5 @@ if (!SUPABASE_URL) {
 if (!SUPABASE_ANON_KEY) {
   throw new Error('Missing Supabase environment variable: VITE_SUPABASE_ANON_KEY');
 }
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
