@@ -1,0 +1,6 @@
+# DB Safety (Supabase MCP)
+- Always use the "Skill: Supabase via MCP (Money Dash)" for any database interaction.
+- Default to read-only (SELECT/inspect) and never reveal secrets (tokens/keys).
+- Any write/DDL (INSERT/UPDATE/DELETE/UPSERT/TRUNCATE/ALTER/DROP/CREATE/RLS/policies/grants) requires explicit user approval:
+  The user must reply exactly: `APROVAR SUPABASE: <SQL exactly as shown>`
+- If approval is missing or differs, do not execute; show the exact SQL again and ask for approval.

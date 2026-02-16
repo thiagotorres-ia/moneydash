@@ -9,6 +9,8 @@ import Login from './pages/Login';
 import Home from './pages/Home';
 import CategoryManagement from './pages/CategoryManagement';
 import EnvelopeTypeManagement from './pages/EnvelopeTypeManagement';
+import EnvelopeManagement from './pages/EnvelopeManagement';
+import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 
 const FullPageLoader = () => (
   <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center text-primary-600">
@@ -25,7 +27,7 @@ const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
   const { isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <FullPageLoader />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <>{children}</>;
+  return <RouteErrorBoundary>{children}</RouteErrorBoundary>;
 };
 
 const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
@@ -41,6 +43,7 @@ const AppContent = () => {
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
       <Route path="/categorias" element={<ProtectedRoute><CategoryManagement /></ProtectedRoute>} />
+      <Route path="/envelopes" element={<ProtectedRoute><EnvelopeManagement /></ProtectedRoute>} />
       <Route path="/tipos-envelope" element={<ProtectedRoute><EnvelopeTypeManagement /></ProtectedRoute>} />
       {/* Fallback para evitar URLs inválidas quebrando o fluxo */}
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -3,7 +3,8 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { AuthContextType, User } from '../types';
 import { supabase } from '../lib/supabase';
 
-const LOGIN_TIMEOUT_MS = 15000;
+/** Timeout do login. "Tempo esgotado" pode ser causado por rede lenta ou Supabase indisponível; aumentar se necessário (ex.: 25000). */
+const LOGIN_TIMEOUT_MS = 20000;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 

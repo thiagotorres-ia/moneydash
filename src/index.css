@@ -12,6 +12,37 @@
 }
 
 @layer utilities {
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.gray.400') theme('colors.gray.200');
+  }
+  .dark .custom-scrollbar {
+    scrollbar-color: theme('colors.gray.500') theme('colors.gray.700');
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: theme('colors.gray.200');
+  }
+  .dark .custom-scrollbar::-webkit-scrollbar-track {
+    background: theme('colors.gray.700');
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: theme('colors.gray.400');
+    border-radius: 4px;
+  }
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: theme('colors.gray.500');
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.gray.500');
+  }
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.gray.400');
+  }
+
   .animate-fadeIn {
     animation: fadeIn 0.2s ease-out;
   }

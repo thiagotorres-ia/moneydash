@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { LogOut, Menu, X, RefreshCw, LayoutDashboard, FolderTree, Layers } from 'lucide-react';
+import { LogOut, Menu, X, RefreshCw, LayoutDashboard, FolderTree, Layers, Wallet } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
 import { APP_NAME } from '../constants';
@@ -55,6 +55,19 @@ export const Navbar: React.FC = () => {
               >
                 <FolderTree className="w-4 h-4" />
                 Categorias
+              </NavLink>
+              <NavLink
+                to="/envelopes"
+                className={({ isActive }) => `
+                  px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2
+                  ${isActive 
+                    ? 'text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 shadow-sm' 
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
+                  }
+                `}
+              >
+                <Wallet className="w-4 h-4" />
+                Envelopes
               </NavLink>
               <NavLink
                 to="/tipos-envelope"
@@ -111,6 +124,9 @@ export const Navbar: React.FC = () => {
             </Link>
             <Link to="/categorias" className="flex items-center gap-2 px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setIsMenuOpen(false)}>
               <FolderTree className="w-5 h-5" /> Categorias
+            </Link>
+            <Link to="/envelopes" className="flex items-center gap-2 px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setIsMenuOpen(false)}>
+              <Wallet className="w-5 h-5" /> Envelopes
             </Link>
             <Link to="/tipos-envelope" className="flex items-center gap-2 px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700" onClick={() => setIsMenuOpen(false)}>
               <Layers className="w-5 h-5" /> Tipos de Envelope

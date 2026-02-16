@@ -299,7 +299,6 @@ const EnvelopeTypeManagement: React.FC = () => {
                       <SortableTypeRow
                         key={item.id}
                         item={item}
-                        isEditingOrder={isEditingOrder}
                         onEdit={(t) => {
                           setEditingType(t);
                           setIsModalOpen(true);

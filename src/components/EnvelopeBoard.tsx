@@ -250,9 +250,12 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
     setIsCreateModalOpen(true);
   };
 
+  const DELETE_BALANCE_MESSAGE =
+    'Não é possível excluir: o envelope possui saldo diferente de zero. Transfira ou ajuste os lançamentos antes de excluir.';
+
   const requestDelete = (env: Envelope) => {
-    if (Math.abs(env.amount) > 0.01) {
-      setDeleteError(`Não é possível excluir o envelope "${env.name}" pois ele possui saldo diferente de zero.`);
+    if (Number(env.amount) !== 0) {
+      setDeleteError(DELETE_BALANCE_MESSAGE);
     } else {
       setDeleteError(null);
     }
@@ -260,11 +263,17 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
   };
 
   const confirmDelete = async () => {
-    if (deletingEnvelope) {
+    if (!deletingEnvelope) return;
+    try {
       await onDeleteEnvelope(deletingEnvelope.id);
+      setDeleteError(null);
       setDeletingEnvelope(null);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Não foi possível excluir.');
     }
   };
+
+  const deletingEnvelopeBalanceNonZero = deletingEnvelope ? Number(deletingEnvelope.amount) !== 0 : false;
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -313,7 +322,12 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
         </div>
 
         <div className="flex gap-2 w-full sm:w-auto">
-            <Button onClick={openCreateModal} className="text-xs h-9 whitespace-nowrap flex-1 sm:flex-none">
+            <Button
+              onClick={openCreateModal}
+              className="text-xs h-9 whitespace-nowrap flex-1 sm:flex-none"
+              disabled={envelopeTypes.length === 0}
+              title={envelopeTypes.length === 0 ? 'Cadastre um tipo em Tipos de Envelope primeiro' : undefined}
+            >
                 <Plus className="w-3.5 h-3.5 mr-1.5" />
                 Novo Envelope
             </Button>
@@ -464,14 +478,28 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
       {/* Delete Modal */}
       <Modal isOpen={!!deletingEnvelope} onClose={() => !isDeleting && setDeletingEnvelope(null)} title="Excluir Envelope">
         <div className="space-y-4">
-          {deleteError ? (
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Saldo atual: <strong>{formatCurrency(Number(deletingEnvelope?.amount) || 0)}</strong>.
+            Só é possível excluir quando o saldo for zero.
+          </p>
+          {deletingEnvelopeBalanceNonZero && (
+            <p className="text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg">
+              {DELETE_BALANCE_MESSAGE}
+            </p>
+          )}
+          {deleteError && (
             <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-700 dark:text-red-300 text-sm">{deleteError}</div>
-          ) : (
+          )}
+          {!deletingEnvelopeBalanceNonZero && !deleteError && (
             <p className="text-gray-600 dark:text-gray-300">Tem certeza que deseja excluir o envelope <strong>{deletingEnvelope?.name}</strong>?</p>
           )}
           <div className="flex justify-end gap-3 pt-4">
-            <Button variant="ghost" onClick={() => setDeletingEnvelope(null)}>Fechar</Button>
-            {!deleteError && <Button className="bg-red-600 text-white" onClick={confirmDelete} isLoading={isDeleting}>Excluir</Button>}
+            <Button variant="ghost" onClick={() => setDeletingEnvelope(null)} disabled={isDeleting}>Fechar</Button>
+            {!deleteError && (
+              <Button className="bg-red-600 text-white" onClick={confirmDelete} isLoading={isDeleting} disabled={deletingEnvelopeBalanceNonZero}>
+                Excluir
+              </Button>
+            )}
           </div>
         </div>
       </Modal>

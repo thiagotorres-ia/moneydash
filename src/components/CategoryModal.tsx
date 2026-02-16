@@ -8,6 +8,8 @@ import { categoryService } from '../services/categoryService';
 import { useToast } from '../contexts/ToastContext';
 import { Category } from '../types';
 
+const SAVE_TIMEOUT_MS = 15000;
+
 interface CategoryModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -68,18 +70,29 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, o
     
     setIsLoading(true);
     try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), SAVE_TIMEOUT_MS)
+      );
+      const savePromise = category
+        ? categoryService.update(category.id, name.trim(), filteredSubs)
+        : categoryService.create(name.trim(), filteredSubs);
+
+      await Promise.race([savePromise, timeoutPromise]);
+
       if (category) {
-        await categoryService.update(category.id, name.trim(), filteredSubs);
         addToast('Categoria atualizada!', 'success');
       } else {
-        await categoryService.create(name.trim(), filteredSubs);
         addToast('Categoria criada com sucesso!', 'success');
       }
       onSuccess();
       onClose();
     } catch (err: any) {
       console.error('Erro ao processar categoria:', err);
-      addToast(err.message || 'Erro ao processar categoria.', 'error');
+      if (err?.message === 'timeout') {
+        addToast('Tempo esgotado. Tente novamente.', 'error');
+      } else {
+        addToast(err.message || 'Erro ao processar categoria.', 'error');
+      }
     } finally {
       setIsLoading(false);
     }

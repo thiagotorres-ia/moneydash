@@ -202,26 +202,42 @@ const Home: React.FC = () => {
             setEnvelopes={setEnvelopes}
             onTransfer={async (f, t, a) => {
               setProcessing(p => ({ ...p, transfer: true }));
-              try { await envelopeService.transfer(f, t, a); await fetchData(true); addToast('Transferência ok!'); }
-              catch(e) { addToast('Erro na transferência', 'error'); }
-              finally { setProcessing(p => ({ ...p, transfer: false })); }
+              try {
+                await envelopeService.transfer(f, t, a);
+                await fetchData(true);
+                addToast('Transferência ok!');
+              } catch (e) {
+                const message = e instanceof Error ? e.message : 'Erro na transferência.';
+                addToast(message, 'error');
+              } finally {
+                setProcessing(p => ({ ...p, transfer: false }));
+              }
             }}
             onCreateEnvelope={async (d) => {
               setProcessing(p => ({ ...p, createEnvelope: true }));
               try { await envelopeService.create({ ...d, amount: 0 }); await fetchData(true); addToast('Envelope criado!'); }
-              catch(e) { addToast('Erro ao criar envelope', 'error'); }
+              catch (e) {
+                const message = e instanceof Error ? e.message : 'Erro ao criar envelope.';
+                addToast(message, 'error');
+              }
               finally { setProcessing(p => ({ ...p, createEnvelope: false })); }
             }}
             onEditEnvelope={async (id, c, n, envelopeTypeId) => {
               setProcessing(p => ({ ...p, editEnvelope: true }));
               try { await envelopeService.update(id, { code: c, name: n, envelope_type_id: envelopeTypeId }); await fetchData(true); addToast('Envelope atualizado!'); }
-              catch(e) { addToast('Erro ao atualizar', 'error'); }
+              catch (e) {
+                const message = e instanceof Error ? e.message : 'Erro ao atualizar.';
+                addToast(message, 'error');
+              }
               finally { setProcessing(p => ({ ...p, editEnvelope: false })); }
             }}
             onDeleteEnvelope={async (id) => {
               setProcessing(p => ({ ...p, deleteEnvelope: true }));
               try { await envelopeService.delete(id); await fetchData(true); addToast('Envelope removido'); }
-              catch(e) { addToast('Erro ao excluir', 'error'); }
+              catch (e) {
+                const message = e instanceof Error ? e.message : 'Erro ao excluir.';
+                addToast(message, 'error');
+              }
               finally { setProcessing(p => ({ ...p, deleteEnvelope: false })); }
             }}
             isCreating={processing.createEnvelope}

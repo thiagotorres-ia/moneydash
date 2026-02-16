@@ -17,18 +17,24 @@ const CategoryManagement: React.FC = () => {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const fetchCategories = useCallback(async () => {
-    setIsLoading(true);
-    setHasError(false);
+  const fetchCategories = useCallback(async (silent = false) => {
+    if (!silent) {
+      setIsLoading(true);
+      setHasError(false);
+    }
     try {
       const data = await categoryService.getAll();
       setCategories(data || []);
     } catch (err) {
       console.error('Erro ao buscar categorias:', err);
-      setHasError(true);
-      addToast('Não foi possível carregar as categorias.', 'error');
+      if (silent) {
+        addToast('Categoria salva, mas a lista não pôde ser atualizada. Tente recarregar.', 'error');
+      } else {
+        setHasError(true);
+        addToast('Não foi possível carregar as categorias.', 'error');
+      }
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [addToast]);
 
@@ -158,7 +164,7 @@ const CategoryManagement: React.FC = () => {
       <CategoryModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        onSuccess={fetchCategories}
+        onSuccess={() => fetchCategories(true)}
         category={editingCategory}
       />
     </div>

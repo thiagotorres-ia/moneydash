@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -32,6 +32,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     description: '',
     envelopeId: '' as string | null
   });
+
+  const sortedEnvelopes = useMemo(
+    () => [...(envelopes ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    [envelopes]
+  );
 
   // Sincronizar dados quando o modal abre ou a transação muda
   useEffect(() => {
@@ -87,7 +92,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={transaction ? "Editar Transação" : "Nova Transação"}>
+    <Modal isOpen={isOpen} onClose={onClose} title={transaction ? "Editar Transação" : "Nova Transação"} size="large">
       <form onSubmit={handleSubmit} className="space-y-5">
         
         <div className="flex p-1 bg-gray-100 dark:bg-gray-900 rounded-xl">
@@ -147,15 +152,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           disabled={isLoading}
         />
 
-        <div className="space-y-1.5">
+        <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 p-3">
           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Envelope (Opcional)
           </label>
           <SearchableSelect
-            options={envelopes}
+            options={sortedEnvelopes}
             value={formData.envelopeId || ''}
             onChange={(val) => setFormData({ ...formData, envelopeId: val })}
             placeholder="Vincular a um envelope..."
+            emptyOptionLabel="Sem envelope"
             disabled={isLoading}
           />
         </div>

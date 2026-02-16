@@ -14,6 +14,15 @@ function toUserFriendlyError(error: { message?: string; code?: string }): Error 
       'Permissão negada. Verifique se as políticas RLS da tabela envelope_types estão configuradas (execute sql/004_envelope_types_rls_policies.sql no Supabase).'
     );
   }
+  if (code === '23505') {
+    return new Error('Já existe um tipo com esse nome ou ordem. Altere o nome ou a ordem.');
+  }
+  if (code === '23502') {
+    return new Error('Preencha o nome do tipo.');
+  }
+  if (code === '22P02') {
+    return new Error('Dados inválidos. Verifique o formulário.');
+  }
   return new Error(msg || 'Erro ao processar operação.');
 }
 
@@ -58,7 +67,7 @@ export const envelopeTypeService = {
 
     if (error) {
       console.error('[envelopeTypeService.create]:', error);
-      throw error;
+      throw toUserFriendlyError(error);
     }
     return data as EnvelopeTypeRecord;
   },
@@ -86,6 +95,20 @@ export const envelopeTypeService = {
   },
 
   async updateOrder(orderedIds: string[]): Promise<void> {
+    const offset = 1000;
+    // Passo 1: atualizar todos para relative_order temporário (índice + offset) para evitar duplicata durante os UPDATEs (constraint UNIQUE em relative_order).
+    for (let i = 0; i < orderedIds.length; i++) {
+      const { error } = await supabase
+        .from('envelope_types')
+        .update({ relative_order: i + offset })
+        .eq('id', orderedIds[i]);
+
+      if (error) {
+        console.error('[envelopeTypeService.updateOrder]:', error);
+        throw toUserFriendlyError(error);
+      }
+    }
+    // Passo 2: atualizar todos para a ordem final (0, 1, 2, ...).
     for (let i = 0; i < orderedIds.length; i++) {
       const { error } = await supabase
         .from('envelope_types')

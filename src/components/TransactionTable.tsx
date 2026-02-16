@@ -70,14 +70,20 @@ const TransactionRow = ({ index, style, data }: any) => {
           onChange={() => toggleSelect(tx.id)} 
         />
       </div>
-      <div className="px-2 text-[11px] text-gray-500 dark:text-gray-400 truncate">{formatDate(tx.date)}</div>
+      <div className="px-2 text-[11px] text-gray-600 dark:text-gray-300 truncate">{formatDate(tx.date)}</div>
       <div className="px-2 text-center">
-        <span className={`inline-flex items-center text-[9px] font-bold px-2 py-0.5 rounded-full border ${tx.type === 'credit' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-red-600 bg-red-50 border-red-100'}`}>
+        <span
+          className={`inline-flex items-center text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+            tx.type === 'credit'
+              ? 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-700'
+              : 'text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-900/30 dark:border-red-700'
+          }`}
+        >
           {tx.type === 'credit' ? 'CRÉD' : 'DÉB'}
         </span>
       </div>
       <div className="px-2 text-xs font-medium text-gray-900 dark:text-white truncate">{tx.description}</div>
-      <div className={`px-2 text-xs font-bold text-right truncate ${tx.amount >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(tx.amount)}</div>
+      <div className={`px-2 text-xs font-bold text-right truncate ${tx.amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(tx.amount)}</div>
       <div className="px-2">
         {isEditing ? (
           <div className="relative z-50">
@@ -85,19 +91,27 @@ const TransactionRow = ({ index, style, data }: any) => {
               autoFocus 
               options={sortedEnvelopes} 
               value={tx.envelopeId || ''} 
-              onChange={(val) => { onUpdateEnvelope(tx.id, val); setEditingTxId(null); }} 
+              onChange={(val) => { onUpdateEnvelope(tx.id, val || null); setEditingTxId(null); }} 
+              emptyOptionLabel="Sem envelope"
             />
           </div>
         ) : (
-          <div onClick={() => setEditingTxId(tx.id)} className="cursor-pointer px-2 py-1 rounded border border-dashed border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-[10px] truncate flex items-center justify-between">
-            {linkedEnvelope ? linkedEnvelope.name : <span className="text-amber-500 font-bold">Sem Envelope</span>}
-            <ChevronDown className="w-2.5 h-2.5 opacity-40" />
+          <div
+            onClick={() => setEditingTxId(tx.id)}
+            className="cursor-pointer px-2 py-1 rounded border border-dashed border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-[10px] truncate flex items-center justify-between text-gray-900 dark:text-gray-100 font-medium"
+          >
+            {linkedEnvelope ? (
+              <span className="truncate text-gray-900 dark:text-gray-100">{linkedEnvelope.name}</span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400 font-bold">Sem Envelope</span>
+            )}
+            <ChevronDown className="w-2.5 h-2.5 text-gray-500 dark:text-gray-400 flex-shrink-0" />
           </div>
         )}
       </div>
       <div className="px-2 flex justify-center gap-1">
-        <button onClick={() => onEdit(tx)} className="text-gray-400 hover:text-primary-500 p-1.5 transition-colors" title="Editar" type="button"><Pencil className="w-3.5 h-3.5" /></button>
-        <button onClick={() => onDelete(tx.id)} className="text-gray-400 hover:text-red-500 p-1.5 transition-colors" title="Excluir" type="button"><Trash2 className="w-3.5 h-3.5" /></button>
+        <button onClick={() => onEdit(tx)} className="text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 p-1.5 transition-colors" title="Editar" type="button"><Pencil className="w-3.5 h-3.5" /></button>
+        <button onClick={() => onDelete(tx.id)} className="text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1.5 transition-colors" title="Excluir" type="button"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
     </div>
   );
@@ -290,7 +304,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         </div>
       </div>
 
-      <div className="grid bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-400 font-bold border-b border-gray-100 dark:border-gray-700" style={{ gridTemplateColumns: GRID_TEMPLATE }}>
+      <div className="grid bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-600 dark:text-gray-300 font-bold border-b border-gray-100 dark:border-gray-700" style={{ gridTemplateColumns: GRID_TEMPLATE }}>
         <div className="py-2 flex justify-center">
           <input 
             type="checkbox" 
@@ -312,8 +326,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           {({ height, width }: any) => (
             <div className="relative h-full w-full">
               {filteredTransactions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                  <AlertCircle className="w-8 h-8 opacity-20" />
+                <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 gap-2">
+                  <AlertCircle className="w-8 h-8 opacity-30 dark:opacity-40" />
                   <p className="text-xs font-medium">Nenhum lançamento encontrado.</p>
                 </div>
               ) : (
