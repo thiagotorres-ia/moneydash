@@ -14,6 +14,8 @@ interface SearchableSelectProps {
   disabled?: boolean;
 }
 
+const DROPDOWN_PANEL_MAX_HEIGHT = 320;
+
 interface DropdownRect {
   top: number;
   left: number;
@@ -35,6 +37,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [dropdownRect, setDropdownRect] = useState<DropdownRect>({ top: 0, left: 0, width: 220, height: 40 });
+  const [openUpward, setOpenUpward] = useState(false);
+  const [triggerTop, setTriggerTop] = useState(0);
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +71,10 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   useEffect(() => {
     if (isOpen && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const upward = spaceBelow < DROPDOWN_PANEL_MAX_HEIGHT;
+      setOpenUpward(upward);
+      setTriggerTop(rect.top);
       setDropdownRect({
         top: rect.bottom,
         left: rect.left,
@@ -89,6 +97,10 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     if (disabled) return;
     if (!isOpen && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const upward = spaceBelow < DROPDOWN_PANEL_MAX_HEIGHT;
+      setOpenUpward(upward);
+      setTriggerTop(rect.top);
       setDropdownRect({
         top: rect.bottom,
         left: rect.left,
@@ -100,15 +112,19 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     setSearchTerm('');
   };
 
+  const panelTop = openUpward
+    ? triggerTop - DROPDOWN_PANEL_MAX_HEIGHT - 4
+    : dropdownRect.top + 4;
+
   const panelContent = isOpen ? (
     <div
       ref={panelRef}
-      className="fixed z-[9999] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+      className={`fixed z-[9999] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in duration-100 ${openUpward ? 'zoom-in-95 origin-bottom' : 'zoom-in-95'}`}
       style={{
-        top: dropdownRect.top + 4,
+        top: panelTop,
         left: dropdownRect.left,
         width: dropdownRect.width,
-        maxHeight: 320
+        maxHeight: DROPDOWN_PANEL_MAX_HEIGHT
       }}
     >
       <div className="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex-shrink-0">

@@ -2,14 +2,14 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, Trash2, Plus, Pencil,
-  RefreshCw, ChevronDown, 
+  RefreshCw, ChevronDown, ArrowUp, ArrowDown,
   Upload, FileSpreadsheet, Tag, AlertCircle, X
 } from 'lucide-react';
 // @ts-ignore
 import * as ReactWindow from 'react-window';
 // @ts-ignore
 import AutoSizerModule from 'react-virtualized-auto-sizer';
-import { Transaction, Envelope } from '../types';
+import { Transaction, Envelope, Category } from '../types';
 import { formatCurrency, formatDate } from '../utils/format';
 import { Button } from './Button';
 import { Modal } from './Modal';
@@ -21,15 +21,18 @@ import { ConfirmModal } from './ConfirmModal';
 const List = (ReactWindow as any).FixedSizeList;
 const AutoSizer = (AutoSizerModule as any).default || AutoSizerModule;
 
-const GRID_TEMPLATE = "50px 100px 100px 1fr 120px 200px 80px";
+const GRID_TEMPLATE = "48px 90px 56px minmax(0,1fr) 100px 130px 110px 110px 72px";
 
 interface TransactionTableProps {
   transactions: Transaction[];
   envelopes: Envelope[];
+  categories: Category[];
   onDelete: (id: string) => void;
   onBulkDelete: (ids: string[]) => Promise<void>;
   onUpdateEnvelope: (txId: string, envId: string | null) => void | Promise<void>;
   onBulkUpdateEnvelope: (ids: string[], envId: string | null) => Promise<void>;
+  onUpdateCategory: (txId: string, categoryId: string | null, subcategoryId: string | null) => void | Promise<void>;
+  onBulkUpdateCategory: (ids: string[], categoryId: string | null, subcategoryId: string | null) => Promise<void>;
   onAddTransaction: (data: any) => Promise<void>;
   onUpdateTransaction: (id: string, data: any) => Promise<void>;
   onRefresh: () => void | Promise<void>;
@@ -38,67 +41,89 @@ interface TransactionTableProps {
   isBulkUpdating: boolean;
 }
 
+const categoryOptionsAsEnvelope = (categories: Category[]) =>
+  categories
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((c) => ({ id: c.id, name: c.name, code: '', amount: 0, envelope_type_id: '', envelope_type_name: undefined }));
+
 const TransactionRow = ({ index, style, data }: any) => {
-  const { 
-    items, envelopes, selectedIds, toggleSelect, editingTxId, 
-    setEditingTxId, onUpdateEnvelope, onDelete, onEdit, sortedEnvelopes 
+  const {
+    items,
+    envelopes,
+    categories,
+    selectedIds,
+    toggleSelect,
+    editingTxId,
+    setEditingTxId,
+    editingCategoryTxId,
+    setEditingCategoryTxId,
+    pendingCategoryId,
+    setPendingCategoryId,
+    openCategoryEdit,
+    onUpdateEnvelope,
+    onUpdateCategory,
+    onDelete,
+    onEdit,
+    sortedEnvelopes,
+    categoryOptionsForSelect,
+    getSubcategoryOptions
   } = data;
-  
+
   const tx = items[index];
   if (!tx) return null;
 
   const linkedEnvelope = envelopes.find((e: any) => e.id === tx.envelopeId);
+  const linkedCategory = categories.find((c: Category) => c.id === tx.categoryId);
+  const linkedSubcategory = linkedCategory?.sub_categories?.find((s: any) => s.id === tx.subcategoryId);
+
   const isSelected = selectedIds.has(tx.id);
-  const isEditing = editingTxId === tx.id;
+  const isEditingEnvelope = editingTxId === tx.id;
+  const isEditingCategory = editingCategoryTxId === tx.id;
 
   const rowStyle = {
     ...style,
-    zIndex: isEditing ? 50 : 1,
-    overflow: isEditing ? 'visible' : 'hidden'
+    zIndex: isEditingEnvelope || isEditingCategory ? 50 : 1,
+    overflow: isEditingEnvelope || isEditingCategory ? 'visible' : 'hidden'
   };
 
   return (
-    <div 
-      style={{ ...rowStyle, gridTemplateColumns: GRID_TEMPLATE }} 
+    <div
+      style={{ ...rowStyle, gridTemplateColumns: GRID_TEMPLATE }}
       className={`grid items-center border-b border-gray-100 dark:border-gray-700/50 border-l-4 transition-colors ${isSelected ? 'bg-primary-50 dark:bg-primary-900/10 border-primary-500' : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-transparent'}`}
     >
       <div className="flex justify-center">
-        <input 
-          type="checkbox" 
-          className="rounded border-gray-300 text-primary-600 w-4 h-4 cursor-pointer focus:ring-primary-500" 
-          checked={isSelected} 
-          onChange={() => toggleSelect(tx.id)} 
+        <input
+          type="checkbox"
+          className="rounded border-gray-300 text-primary-600 w-4 h-4 cursor-pointer focus:ring-primary-500"
+          checked={isSelected}
+          onChange={() => toggleSelect(tx.id)}
         />
       </div>
-      <div className="px-2 text-[11px] text-gray-600 dark:text-gray-300 truncate">{formatDate(tx.date)}</div>
-      <div className="px-2 text-center">
-        <span
-          className={`inline-flex items-center text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-            tx.type === 'credit'
-              ? 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-700'
-              : 'text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-900/30 dark:border-red-700'
-          }`}
-        >
-          {tx.type === 'credit' ? 'CRÉD' : 'DÉB'}
-        </span>
+      <div className="px-2 text-xs text-gray-700 dark:text-gray-300 truncate" title={formatDate(tx.date)}>{formatDate(tx.date)}</div>
+      <div className="px-2 flex justify-center">
+        {tx.type === 'credit' ? (
+          <ArrowUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" aria-label="Crédito" title="Crédito" />
+        ) : (
+          <ArrowDown className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" aria-label="Débito" title="Débito" />
+        )}
       </div>
-      <div className="px-2 text-xs font-medium text-gray-900 dark:text-white truncate">{tx.description}</div>
+      <div className="px-2 text-xs font-medium text-gray-900 dark:text-white break-words line-clamp-2">{tx.description}</div>
       <div className={`px-2 text-xs font-bold text-right truncate ${tx.amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(tx.amount)}</div>
       <div className="px-2">
-        {isEditing ? (
+        {isEditingEnvelope ? (
           <div className="relative z-50">
-            <SearchableSelect 
-              autoFocus 
-              options={sortedEnvelopes} 
-              value={tx.envelopeId || ''} 
-              onChange={(val) => { onUpdateEnvelope(tx.id, val || null); setEditingTxId(null); }} 
+            <SearchableSelect
+              autoFocus
+              options={sortedEnvelopes}
+              value={tx.envelopeId || ''}
+              onChange={(val) => { onUpdateEnvelope(tx.id, val || null); setEditingTxId(null); }}
               emptyOptionLabel="Sem envelope"
             />
           </div>
         ) : (
           <div
             onClick={() => setEditingTxId(tx.id)}
-            className="cursor-pointer px-2 py-1 rounded border border-dashed border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-[10px] truncate flex items-center justify-between text-gray-900 dark:text-gray-100 font-medium"
+            className="cursor-pointer px-2 py-1 rounded border border-dashed border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-[10px] truncate flex items-center justify-between text-gray-900 dark:text-gray-100 font-medium min-h-[28px]"
           >
             {linkedEnvelope ? (
               <span className="truncate text-gray-900 dark:text-gray-100">{linkedEnvelope.name}</span>
@@ -109,36 +134,140 @@ const TransactionRow = ({ index, style, data }: any) => {
           </div>
         )}
       </div>
+      <div className="px-2">
+        {isEditingCategory ? (
+          <div className="relative z-50">
+            <SearchableSelect
+              autoFocus
+              options={categoryOptionsForSelect}
+              value={(editingCategoryTxId === tx.id ? pendingCategoryId : tx.categoryId) || ''}
+              onChange={(val) => {
+                if (val === '') {
+                  onUpdateCategory(tx.id, null, null);
+                  setEditingCategoryTxId(null);
+                  setPendingCategoryId('');
+                } else {
+                  const opts = getSubcategoryOptions(val);
+                  if (opts.length > 0) {
+                    onUpdateCategory(tx.id, val, opts[0].id);
+                  }
+                  setPendingCategoryId(val);
+                }
+              }}
+              emptyOptionLabel="Nenhuma"
+            />
+          </div>
+        ) : (
+          <div
+            onClick={() => openCategoryEdit(tx)}
+            className="cursor-pointer px-2 py-1 rounded border border-dashed border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-[10px] truncate flex items-center justify-between text-gray-900 dark:text-gray-100 font-medium min-h-[28px] transition-colors duration-200"
+          >
+            {linkedCategory ? (
+              <span className="truncate text-gray-900 dark:text-gray-100" title={linkedCategory.name}>{linkedCategory.name}</span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400 font-bold">Sem categoria</span>
+            )}
+            <ChevronDown className="w-2.5 h-2.5 text-gray-500 dark:text-gray-400 flex-shrink-0" />
+          </div>
+        )}
+      </div>
+      <div className="px-2">
+        {isEditingCategory ? (
+          (pendingCategoryId || tx.categoryId) && getSubcategoryOptions(pendingCategoryId || tx.categoryId).length > 0 ? (
+            <div className="relative z-50">
+              <SearchableSelect
+                options={getSubcategoryOptions(pendingCategoryId || tx.categoryId)}
+                value={tx.subcategoryId || ''}
+                onChange={(val) => {
+                  onUpdateCategory(tx.id, pendingCategoryId || tx.categoryId, val || null);
+                  setEditingCategoryTxId(null);
+                  setPendingCategoryId('');
+                }}
+                emptyOptionLabel="Nenhuma"
+              />
+            </div>
+          ) : (
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">—</span>
+          )
+        ) : (
+          <div
+            onClick={() => openCategoryEdit(tx)}
+            className="cursor-pointer px-2 py-1 rounded border border-dashed border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-[10px] truncate flex items-center justify-between text-gray-900 dark:text-gray-100 font-medium min-h-[28px] transition-colors duration-200"
+          >
+            {linkedSubcategory ? (
+              <span className="truncate text-gray-900 dark:text-gray-100" title={linkedSubcategory.name}>{linkedSubcategory.name}</span>
+            ) : (
+              <span className="text-gray-400 dark:text-gray-500">—</span>
+            )}
+            <ChevronDown className="w-2.5 h-2.5 text-gray-500 dark:text-gray-400 flex-shrink-0" />
+          </div>
+        )}
+      </div>
       <div className="px-2 flex justify-center gap-1">
-        <button onClick={() => onEdit(tx)} className="text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 p-1.5 transition-colors" title="Editar" type="button"><Pencil className="w-3.5 h-3.5" /></button>
-        <button onClick={() => onDelete(tx.id)} className="text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1.5 transition-colors" title="Excluir" type="button"><Trash2 className="w-3.5 h-3.5" /></button>
+        <button onClick={() => onEdit(tx)} className="text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 p-1.5 transition-colors cursor-pointer" title="Editar" type="button"><Pencil className="w-3.5 h-3.5" /></button>
+        <button onClick={() => onDelete(tx.id)} className="text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1.5 transition-colors cursor-pointer" title="Excluir" type="button"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
     </div>
   );
 };
 
-export const TransactionTable: React.FC<TransactionTableProps> = ({ 
-  transactions, envelopes, onDelete, onBulkDelete, onUpdateEnvelope, onBulkUpdateEnvelope,
-  onRefresh, isAdding, isUpdating, isBulkUpdating, onAddTransaction, onUpdateTransaction
+export const TransactionTable: React.FC<TransactionTableProps> = ({
+  transactions,
+  envelopes,
+  categories,
+  onDelete,
+  onBulkDelete,
+  onUpdateEnvelope,
+  onBulkUpdateEnvelope,
+  onUpdateCategory,
+  onBulkUpdateCategory,
+  onRefresh,
+  isAdding,
+  isUpdating,
+  isBulkUpdating,
+  onAddTransaction,
+  onUpdateTransaction
 }) => {
   const { addToast } = useToast();
   const [textFilter, setTextFilter] = useState('');
   const [showOnlyUnallocated, setShowOnlyUnallocated] = useState(false);
+  const [showOnlyUncategorized, setShowOnlyUncategorized] = useState(false);
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
+  const [editingCategoryTxId, setEditingCategoryTxId] = useState<string | null>(null);
+  const [pendingCategoryId, setPendingCategoryId] = useState<string>('');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [selectedEnvelopeId, setSelectedEnvelopeId] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string>('');
   const [importFile, setImportFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showAssignConfirm, setShowAssignConfirm] = useState(false);
+  const [showCategoryConfirm, setShowCategoryConfirm] = useState(false);
 
   const sortedEnvelopes = useMemo(() => [...envelopes].sort((a, b) => a.name.localeCompare(b.name)), [envelopes]);
+
+  const categoryOptionsForSelect = useMemo(() => categoryOptionsAsEnvelope(categories), [categories]);
+  const getSubcategoryOptions = useMemo(() => {
+    return (categoryId: string) => {
+      const cat = categories.find(c => c.id === categoryId);
+      if (!cat?.sub_categories?.length) return [];
+      return cat.sub_categories
+        .map((s: { id: string; name: string }) => ({ id: s.id, name: s.name, code: '', amount: 0, envelope_type_id: '', envelope_type_name: undefined }));
+    };
+  }, [categories]);
+
+  const openCategoryEdit = (tx: Transaction) => {
+    setEditingCategoryTxId(tx.id);
+    setPendingCategoryId(tx.categoryId || '');
+  };
 
   const filteredTransactions = useMemo(() => {
     let res = transactions;
@@ -149,8 +278,11 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
     if (showOnlyUnallocated) {
       res = res.filter(t => !t.envelopeId);
     }
+    if (showOnlyUncategorized) {
+      res = res.filter(t => !t.categoryId);
+    }
     return res;
-  }, [transactions, textFilter, showOnlyUnallocated]);
+  }, [transactions, textFilter, showOnlyUnallocated, showOnlyUncategorized]);
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -206,18 +338,59 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
     }
   };
 
+  const openCategoryModal = () => {
+    if (selectedIds.size === 0) return;
+    setShowCategoryModal(true);
+    setSelectedCategoryId('');
+    setSelectedSubcategoryId('');
+  };
+
+  const requestBulkCategory = () => {
+    if (selectedCategoryId && !selectedSubcategoryId && getSubcategoryOptions(selectedCategoryId).length > 0) {
+      addToast('Selecione uma subcategoria da categoria escolhida.', 'error');
+      return;
+    }
+    setShowCategoryModal(false);
+    setShowCategoryConfirm(true);
+  };
+
+  const confirmBulkCategory = async () => {
+    setShowCategoryConfirm(false);
+    try {
+      await onBulkUpdateCategory(
+        Array.from(selectedIds),
+        selectedCategoryId || null,
+        selectedSubcategoryId || null
+      );
+      clearSelection();
+      setSelectedCategoryId('');
+      setSelectedSubcategoryId('');
+    } catch (err) {
+      console.error('Erro ao atribuir categoria em massa:', err);
+    }
+  };
+
   const itemData = useMemo(() => ({
-    items: filteredTransactions, 
-    envelopes, 
-    selectedIds, 
+    items: filteredTransactions,
+    envelopes,
+    categories,
+    selectedIds,
     toggleSelect,
-    editingTxId, 
-    setEditingTxId, 
-    onUpdateEnvelope, 
-    onDelete, 
+    editingTxId,
+    setEditingTxId,
+    editingCategoryTxId,
+    setEditingCategoryTxId,
+    pendingCategoryId,
+    setPendingCategoryId,
+    openCategoryEdit,
+    onUpdateEnvelope,
+    onUpdateCategory,
+    onDelete,
     onEdit: (tx: Transaction) => { setEditingTransaction(tx); setIsModalOpen(true); },
-    sortedEnvelopes
-  }), [filteredTransactions, envelopes, selectedIds, editingTxId, onUpdateEnvelope, onDelete, sortedEnvelopes]);
+    sortedEnvelopes,
+    categoryOptionsForSelect,
+    getSubcategoryOptions
+  }), [filteredTransactions, envelopes, categories, selectedIds, editingTxId, editingCategoryTxId, pendingCategoryId, onUpdateEnvelope, onUpdateCategory, onDelete, sortedEnvelopes, categoryOptionsForSelect, getSubcategoryOptions]);
 
   const allSelected = selectedIds.size === filteredTransactions.length && filteredTransactions.length > 0;
 
@@ -239,17 +412,24 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           <div className="h-8 w-px bg-white/20" />
 
           <div className="flex gap-2">
-            <button 
-              onClick={openAssignModal} 
-              className="h-10 px-4 bg-white text-primary-700 rounded-xl text-xs font-bold hover:bg-primary-50 transition-colors shadow-sm"
+            <button
+              onClick={openAssignModal}
+              className="h-10 px-4 bg-white text-primary-700 rounded-xl text-xs font-bold hover:bg-primary-50 transition-colors shadow-sm min-h-[44px]"
               type="button"
             >
               Atribuir Envelope
             </button>
-            <button 
+            <button
+              onClick={openCategoryModal}
+              className="h-10 px-4 bg-white text-primary-700 rounded-xl text-xs font-bold hover:bg-primary-50 transition-colors shadow-sm min-h-[44px]"
+              type="button"
+            >
+              Atribuir Categoria
+            </button>
+            <button
               id="btn-bulk-delete"
-              onClick={handleBulkDelete} 
-              className="h-10 px-4 bg-red-500 text-white rounded-xl text-xs font-bold hover:bg-red-600 transition-colors shadow-sm flex items-center gap-2 border border-red-400"
+              onClick={handleBulkDelete}
+              className="h-10 px-4 bg-red-500 text-white rounded-xl text-xs font-bold hover:bg-red-600 transition-colors shadow-sm flex items-center gap-2 border border-red-400 min-h-[44px]"
               type="button"
             >
               <Trash2 className="w-3.5 h-3.5" /> Excluir
@@ -295,10 +475,14 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               onChange={e => setTextFilter(e.target.value)} 
             />
           </div>
-          <div className="flex items-center">
-            <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer transition-all select-none ${showOnlyUnallocated ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer transition-all select-none min-h-[44px] ${showOnlyUnallocated ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
               <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer" checked={showOnlyUnallocated} onChange={e => setShowOnlyUnallocated(e.target.checked)} />
               <span className="text-[11px] font-bold uppercase tracking-tight">Sem Envelope</span>
+            </label>
+            <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer transition-all select-none min-h-[44px] ${showOnlyUncategorized ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+              <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer" checked={showOnlyUncategorized} onChange={e => setShowOnlyUncategorized(e.target.checked)} />
+              <span className="text-[11px] font-bold uppercase tracking-tight">Sem categoria</span>
             </label>
           </div>
         </div>
@@ -318,6 +502,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         <div className="px-2 py-2">Descrição</div>
         <div className="px-2 py-2 text-right">Valor</div>
         <div className="px-2 py-2">Envelope</div>
+        <div className="px-2 py-2">Categoria</div>
+        <div className="px-2 py-2">Subcategoria</div>
         <div className="px-2 py-2 text-center">Ações</div>
       </div>
 
@@ -331,7 +517,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                   <p className="text-xs font-medium">Nenhum lançamento encontrado.</p>
                 </div>
               ) : (
-                <List height={height} width={width} itemCount={filteredTransactions.length} itemSize={44} itemData={itemData} overscanCount={5}>
+                <List height={height} width={width} itemCount={filteredTransactions.length} itemSize={52} itemData={itemData} overscanCount={5}>
                   {TransactionRow}
                 </List>
               )}
@@ -349,26 +535,27 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           setIsModalOpen(false);
         }}
         envelopes={envelopes}
+        categories={categories}
         transaction={editingTransaction}
         isLoading={isAdding || isUpdating}
       />
 
       {showAssignModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[10000] p-4"
           onClick={() => {
             setShowAssignModal(false);
             setSelectedEnvelopeId(null);
           }}
         >
-          <div 
+          <div
             className="bg-white dark:bg-gray-800 rounded-2xl p-8 w-full max-w-sm shadow-2xl animate-in zoom-in duration-200 border border-gray-100 dark:border-gray-700"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">
               Selecionar Envelope
             </h3>
-            
+
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
               {selectedIds.size} transação(ões) selecionada(s) para mover.
             </p>
@@ -376,7 +563,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             <select
               value={selectedEnvelopeId || ''}
               onChange={(e) => setSelectedEnvelopeId(e.target.value || null)}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm focus:ring-2 focus:ring-primary-500 outline-none transition-all mb-8 dark:text-white font-medium"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm focus:ring-2 focus:ring-primary-500 outline-none transition-all mb-8 dark:text-white font-medium min-h-[44px]"
               autoFocus
             >
               <option value="">Sem envelope (Desvincular)</option>
@@ -386,21 +573,97 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 </option>
               ))}
             </select>
-            
+
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => { setShowAssignModal(false); setSelectedEnvelopeId(null); }}
-                className="px-6 py-2.5 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-bold"
+                className="px-6 py-2.5 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-bold min-h-[44px]"
                 type="button"
               >
                 Cancelar
               </button>
               <button
                 onClick={requestBulkAssign}
-                className="px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-bold shadow-lg shadow-primary-500/20"
+                className="px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-bold shadow-lg shadow-primary-500/20 min-h-[44px]"
                 type="button"
               >
                 Continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCategoryModal && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[10000] p-4"
+          onClick={() => {
+            setShowCategoryModal(false);
+            setSelectedCategoryId('');
+            setSelectedSubcategoryId('');
+          }}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-2xl p-8 w-full max-w-sm shadow-2xl animate-in zoom-in duration-200 border border-gray-100 dark:border-gray-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">
+              Atribuir Categoria
+            </h3>
+
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+              {selectedIds.size} transação(ões) selecionada(s). Escolha categoria e subcategoria (ou Desvincular).
+            </p>
+
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Categoria</label>
+            <select
+              value={selectedCategoryId}
+              onChange={(e) => {
+                const newCatId = e.target.value;
+                setSelectedCategoryId(newCatId);
+                const opts = getSubcategoryOptions(newCatId);
+                setSelectedSubcategoryId(opts.length > 0 ? opts[0].id : '');
+              }}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm focus:ring-2 focus:ring-primary-500 outline-none transition-all mb-4 dark:text-white font-medium min-h-[44px]"
+              autoFocus
+            >
+              <option value="">Nenhuma (Desvincular)</option>
+              {categories.sort((a, b) => a.name.localeCompare(b.name)).map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+
+            {selectedCategoryId && getSubcategoryOptions(selectedCategoryId).length > 0 && (
+              <>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subcategoria</label>
+                <select
+                  value={selectedSubcategoryId}
+                  onChange={(e) => setSelectedSubcategoryId(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm focus:ring-2 focus:ring-primary-500 outline-none transition-all mb-6 dark:text-white font-medium min-h-[44px]"
+                >
+                  <option value="">Selecione...</option>
+                  {getSubcategoryOptions(selectedCategoryId).map((sub: { id: string; name: string }) => (
+                    <option key={sub.id} value={sub.id}>{sub.name}</option>
+                  ))}
+                </select>
+              </>
+            )}
+            {selectedCategoryId && getSubcategoryOptions(selectedCategoryId).length === 0 && <div className="mb-6" />}
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setShowCategoryModal(false); setSelectedCategoryId(''); setSelectedSubcategoryId(''); }}
+                className="px-6 py-2.5 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-bold min-h-[44px]"
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={requestBulkCategory}
+                className="px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all text-sm font-bold shadow-lg shadow-primary-500/20 min-h-[44px]"
+                type="button"
+              >
+                Aplicar
               </button>
             </div>
           </div>
@@ -422,7 +685,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         isOpen={showAssignConfirm}
         title="Confirmar Atribuição"
         message={`Deseja atribuir ${selectedIds.size} transação(ões) ao envelope selecionado?\n\nDestino: ${
-          selectedEnvelopeId 
+          selectedEnvelopeId
             ? envelopes.find(e => e.id === selectedEnvelopeId)?.name || 'Envelope selecionado'
             : 'Remover envelope (Sem atribuição)'
         }`}
@@ -431,6 +694,17 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         cancelText="Voltar"
         onConfirm={confirmBulkAssign}
         onCancel={() => setShowAssignConfirm(false)}
+      />
+
+      <ConfirmModal
+        isOpen={showCategoryConfirm}
+        title="Confirmar Categoria"
+        message={`Aplicar a ${selectedIds.size} lançamento(s)?`}
+        type="info"
+        confirmText="Aplicar"
+        cancelText="Voltar"
+        onConfirm={confirmBulkCategory}
+        onCancel={() => setShowCategoryConfirm(false)}
       />
 
       <Modal isOpen={isImportModalOpen} onClose={() => !isUploading && setIsImportModalOpen(false)} title="Importar Lançamentos">

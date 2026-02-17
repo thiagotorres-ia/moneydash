@@ -75,6 +75,8 @@ export interface Transaction {
   description: string;
   amount: number;
   envelopeId: string | null;
+  categoryId: string | null;
+  subcategoryId: string | null;
   created_at?: string;
 }
 

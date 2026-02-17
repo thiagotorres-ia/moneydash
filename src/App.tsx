@@ -10,6 +10,7 @@ import Home from './pages/Home';
 import CategoryManagement from './pages/CategoryManagement';
 import EnvelopeTypeManagement from './pages/EnvelopeTypeManagement';
 import EnvelopeManagement from './pages/EnvelopeManagement';
+import SpendingByCategoryReport from './pages/SpendingByCategoryReport';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 
 const FullPageLoader = () => (
@@ -45,6 +46,7 @@ const AppContent = () => {
       <Route path="/categorias" element={<ProtectedRoute><CategoryManagement /></ProtectedRoute>} />
       <Route path="/envelopes" element={<ProtectedRoute><EnvelopeManagement /></ProtectedRoute>} />
       <Route path="/tipos-envelope" element={<ProtectedRoute><EnvelopeTypeManagement /></ProtectedRoute>} />
+      <Route path="/dashboards/relatorio-gastos-categoria" element={<ProtectedRoute><SpendingByCategoryReport /></ProtectedRoute>} />
       {/* Fallback para evitar URLs inválidas quebrando o fluxo */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

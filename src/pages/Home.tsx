@@ -7,8 +7,9 @@ import { TransactionTable } from '../components/TransactionTable';
 import { Modal } from '../components/Modal';
 import { Button } from '../components/Button';
 import { useToast } from '../contexts/ToastContext';
-import { Envelope, Transaction } from '../types';
+import { Category, Envelope, Transaction } from '../types';
 import { envelopeService } from '../services/envelopeService';
+import { categoryService } from '../services/categoryService';
 import { transactionService } from '../services/transactionService';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,6 +21,7 @@ const Home: React.FC = () => {
   
   const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isError, setIsError] = useState(false);
   
@@ -45,14 +47,16 @@ const Home: React.FC = () => {
     if (!isSilent) setIsInitialLoading(true);
     
     try {
-      const [envs, txs] = await Promise.all([
+      const [envs, txs, cats] = await Promise.all([
         envelopeService.getAll(),
-        transactionService.getAll()
+        transactionService.getAll(),
+        categoryService.getAll()
       ]);
 
       if (isMounted.current && myFetchId === fetchIdRef.current) {
         setEnvelopes(envs || []);
         setTransactions(txs || []);
+        setCategories(cats || []);
         setIsError(false);
       }
     } catch (error) {
@@ -127,6 +131,23 @@ const Home: React.FC = () => {
     } catch (error) {
       console.error('❌ Erro crítico no bulk update:', error);
       addToast('Erro ao realizar atualização em massa.', 'error');
+    } finally {
+      if (isMounted.current) setProcessing(p => ({ ...p, bulkUpdate: false }));
+    }
+  };
+
+  const handleBulkUpdateCategory = async (
+    ids: string[],
+    categoryId: string | null,
+    subcategoryId: string | null
+  ) => {
+    setProcessing(p => ({ ...p, bulkUpdate: true }));
+    try {
+      await transactionService.bulkUpdateCategory(ids, categoryId, subcategoryId);
+      await fetchData(true);
+      addToast('Categoria atribuída aos lançamentos.', 'success');
+    } catch (e) {
+      addToast('Erro ao atribuir categoria.', 'error');
     } finally {
       if (isMounted.current) setProcessing(p => ({ ...p, bulkUpdate: false }));
     }
@@ -253,6 +274,7 @@ const Home: React.FC = () => {
           <TransactionTable 
             transactions={transactions}
             envelopes={envelopes}
+            categories={categories}
             onDelete={(id) => setTransactionToDelete(id)}
             onBulkDelete={handleBulkDeleteTransactions}
             onUpdateEnvelope={async (txId, envId) => {
@@ -260,6 +282,11 @@ const Home: React.FC = () => {
               catch(e) { addToast('Erro ao atualizar', 'error'); }
             }}
             onBulkUpdateEnvelope={handleBulkUpdateTransactions}
+            onUpdateCategory={async (txId, catId, subId) => {
+              try { await transactionService.updateCategory(txId, catId || null, subId || null); await fetchData(true); addToast('Categoria atualizada!'); }
+              catch(e) { addToast('Erro ao atualizar categoria.', 'error'); }
+            }}
+            onBulkUpdateCategory={handleBulkUpdateCategory}
             onAddTransaction={handleCreateTransaction}
             onUpdateTransaction={handleUpdateTransaction}
             onRefresh={() => fetchData(true)}

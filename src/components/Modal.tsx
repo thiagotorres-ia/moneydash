@@ -8,14 +8,14 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  /** 'large' uses max-w-xl for more space (e.g. transaction form). */
-  size?: 'default' | 'large';
+  /** 'large' = max-w-xl, 'xlarge' = max-w-2xl for forms with many fields (e.g. transaction edit). */
+  size?: 'default' | 'large' | 'xlarge';
 }
 
 export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer, size = 'default' }) => {
   if (!isOpen) return null;
 
-  const maxWidthClass = size === 'large' ? 'max-w-xl' : 'max-w-lg';
+  const maxWidthClass = size === 'xlarge' ? 'max-w-2xl' : size === 'large' ? 'max-w-xl' : 'max-w-lg';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -24,15 +24,17 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             {title}
           </h3>
-          <button 
+          <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 transition-colors"
+            className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 transition-colors duration-200 cursor-pointer p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            aria-label="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
         
-        <div className="p-6 overflow-y-auto">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0">
           {children}
         </div>
 

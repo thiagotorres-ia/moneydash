@@ -3,7 +3,7 @@ import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input } from './Input';
 import { SearchableSelect } from './SearchableSelect';
-import { Envelope, Transaction, TransactionType } from '../types';
+import { Category, Envelope, Transaction, TransactionType } from '../types';
 import { useToast } from '../contexts/ToastContext';
 
 interface TransactionModalProps {
@@ -11,6 +11,7 @@ interface TransactionModalProps {
   onClose: () => void;
   onSuccess: (data: any, id?: string) => Promise<void>;
   envelopes: Envelope[];
+  categories: Category[];
   transaction?: Transaction | null;
   isLoading?: boolean;
 }
@@ -20,23 +21,44 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   onClose,
   onSuccess,
   envelopes,
+  categories = [],
   transaction = null,
   isLoading = false
 }) => {
   const { addToast } = useToast();
-  
+
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     type: 'debit' as TransactionType,
     amount: '',
     description: '',
-    envelopeId: '' as string | null
+    envelopeId: '' as string | null,
+    categoryId: '',
+    subcategoryId: ''
   });
 
   const sortedEnvelopes = useMemo(
     () => [...(envelopes ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [envelopes]
   );
+
+  const categoryOptionsForSelect = useMemo(() => {
+    return [...(categories ?? [])]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((c) => ({ id: c.id, name: c.name, code: '', amount: 0, envelope_type_id: '', envelope_type_name: undefined }));
+  }, [categories]);
+
+  const selectedCategory = useMemo(
+    () => categories.find((c) => c.id === formData.categoryId),
+    [categories, formData.categoryId]
+  );
+  const subcategoryOptionsForSelect = useMemo(() => {
+    if (!selectedCategory?.sub_categories?.length) return [];
+    return selectedCategory.sub_categories
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((s) => ({ id: s.id, name: s.name, code: '', amount: 0, envelope_type_id: '', envelope_type_name: undefined }));
+  }, [selectedCategory]);
 
   // Sincronizar dados quando o modal abre ou a transação muda
   useEffect(() => {
@@ -47,7 +69,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           type: transaction.type,
           amount: Math.abs(transaction.amount).toString(),
           description: transaction.description,
-          envelopeId: transaction.envelopeId
+          envelopeId: transaction.envelopeId ?? '',
+          categoryId: transaction.categoryId ?? '',
+          subcategoryId: transaction.subcategoryId ?? ''
         });
       } else {
         setFormData({
@@ -55,7 +79,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           type: 'debit',
           amount: '',
           description: '',
-          envelopeId: ''
+          envelopeId: '',
+          categoryId: '',
+          subcategoryId: ''
         });
       }
     }
@@ -75,13 +101,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       return;
     }
 
+    if (formData.categoryId && !formData.subcategoryId) {
+      addToast('Selecione uma subcategoria da categoria escolhida.', 'error');
+      return;
+    }
+
     try {
       const payload = {
         date: formData.date,
         type: formData.type,
         amount: value,
         description: formData.description.trim(),
-        envelopeId: formData.envelopeId || null
+        envelopeId: formData.envelopeId || null,
+        categoryId: formData.categoryId || null,
+        subcategoryId: formData.subcategoryId || null
       };
 
       await onSuccess(payload, transaction?.id);
@@ -91,17 +124,27 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     }
   };
 
+  const footer = (
+    <div className="flex justify-end gap-3">
+      <Button variant="ghost" onClick={onClose} type="button" disabled={isLoading}>
+        Cancelar
+      </Button>
+      <Button type="submit" form="transaction-modal-form" isLoading={isLoading} fullWidth className="sm:w-auto min-h-[44px]">
+        {transaction ? "Atualizar" : "Salvar Lançamento"}
+      </Button>
+    </div>
+  );
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={transaction ? "Editar Transação" : "Nova Transação"} size="large">
-      <form onSubmit={handleSubmit} className="space-y-5">
-        
+    <Modal isOpen={isOpen} onClose={onClose} title={transaction ? "Editar Transação" : "Nova Transação"} size="xlarge" footer={footer}>
+      <form id="transaction-modal-form" onSubmit={handleSubmit} className="space-y-5">
         <div className="flex p-1 bg-gray-100 dark:bg-gray-900 rounded-xl">
           <button
             type="button"
             onClick={() => setFormData({ ...formData, type: 'debit' })}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg transition-all ${
-              formData.type === 'debit' 
-                ? 'bg-white dark:bg-gray-800 text-red-600 shadow-sm' 
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 min-h-[44px] text-sm font-bold rounded-lg transition-colors duration-200 cursor-pointer ${
+              formData.type === 'debit'
+                ? 'bg-white dark:bg-gray-800 text-red-600 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
@@ -111,9 +154,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           <button
             type="button"
             onClick={() => setFormData({ ...formData, type: 'credit' })}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg transition-all ${
-              formData.type === 'credit' 
-                ? 'bg-white dark:bg-gray-800 text-emerald-600 shadow-sm' 
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 min-h-[44px] text-sm font-bold rounded-lg transition-colors duration-200 cursor-pointer ${
+              formData.type === 'credit'
+                ? 'bg-white dark:bg-gray-800 text-emerald-600 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
@@ -152,27 +195,45 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           disabled={isLoading}
         />
 
-        <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 p-3">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Envelope (Opcional)
-          </label>
-          <SearchableSelect
-            options={sortedEnvelopes}
-            value={formData.envelopeId || ''}
-            onChange={(val) => setFormData({ ...formData, envelopeId: val })}
-            placeholder="Vincular a um envelope..."
-            emptyOptionLabel="Sem envelope"
-            disabled={isLoading}
-          />
-        </div>
-
-        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
-          <Button variant="ghost" onClick={onClose} type="button" disabled={isLoading}>
-            Cancelar
-          </Button>
-          <Button type="submit" isLoading={isLoading} fullWidth className="sm:w-auto">
-            {transaction ? "Atualizar" : "Salvar Lançamento"}
-          </Button>
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 p-4">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Classificação (opcional)</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Envelope</label>
+              <SearchableSelect
+                options={sortedEnvelopes}
+                value={formData.envelopeId || ''}
+                onChange={(val) => setFormData({ ...formData, envelopeId: val })}
+                placeholder="Vincular a um envelope..."
+                emptyOptionLabel="Sem envelope"
+                disabled={isLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Categoria</label>
+              <SearchableSelect
+                options={categoryOptionsForSelect as Envelope[]}
+                value={formData.categoryId || ''}
+                onChange={(val) => setFormData({ ...formData, categoryId: val, subcategoryId: '' })}
+                placeholder="Selecione uma categoria..."
+                emptyOptionLabel="Nenhuma"
+                disabled={isLoading}
+              />
+              {formData.categoryId && (
+                <div className="space-y-2 pt-0">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Subcategoria</label>
+                  <SearchableSelect
+                    options={subcategoryOptionsForSelect as Envelope[]}
+                    value={formData.subcategoryId || ''}
+                    onChange={(val) => setFormData({ ...formData, subcategoryId: val })}
+                    placeholder="Selecione uma subcategoria..."
+                    emptyOptionLabel="Nenhuma"
+                    disabled={isLoading}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </form>
     </Modal>

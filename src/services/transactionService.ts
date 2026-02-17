@@ -42,7 +42,7 @@ export const transactionService = {
         const to = from + pageSize - 1;
         const { data, error } = await supabase
           .from('transactions')
-          .select('id, user_id, date, type, description, amount, envelope_id, created_at')
+          .select('id, user_id, date, type, description, amount, envelope_id, category_id, subcategory_id, created_at')
           .order('date', { ascending: false })
           .order('created_at', { ascending: false })
           .range(from, to);
@@ -62,6 +62,8 @@ export const transactionService = {
         description: tx.description,
         amount: tx.type === 'debit' ? -Math.abs(Number(tx.amount)) : Math.abs(Number(tx.amount)),
         envelopeId: (tx.envelope_id != null && tx.envelope_id !== '') ? tx.envelope_id : null,
+        categoryId: (tx.category_id != null && tx.category_id !== '') ? tx.category_id : null,
+        subcategoryId: (tx.subcategory_id != null && tx.subcategory_id !== '') ? tx.subcategory_id : null,
         created_at: tx.created_at
       })) as Transaction[];
     } catch (error) {
@@ -70,11 +72,68 @@ export const transactionService = {
     }
   },
 
+  /**
+   * Busca transações com filtros opcionais (período, categoria, subcategoria).
+   * Usado pelo relatório de gastos por categoria.
+   */
+  async getFiltered(filters: {
+    dateFrom?: string;
+    dateTo?: string;
+    categoryId?: string;
+    subcategoryId?: string;
+  }): Promise<Transaction[]> {
+    try {
+      const pageSize = 1000;
+      const allRows: any[] = [];
+      let from = 0;
+
+      while (true) {
+        let query = supabase
+          .from('transactions')
+          .select('id, user_id, date, type, description, amount, envelope_id, category_id, subcategory_id, created_at')
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false });
+
+        if (filters.dateFrom) query = query.gte('date', filters.dateFrom);
+        if (filters.dateTo) query = query.lte('date', filters.dateTo);
+        if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
+        if (filters.subcategoryId) query = query.eq('subcategory_id', filters.subcategoryId);
+
+        const to = from + pageSize - 1;
+        const { data, error } = await query.range(from, to);
+        if (error) throw error;
+        const page = data || [];
+        allRows.push(...page);
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+
+      return allRows.map((tx: any) => ({
+        id: tx.id,
+        user_id: tx.user_id,
+        date: tx.date,
+        type: tx.type,
+        description: tx.description,
+        amount: tx.type === 'debit' ? -Math.abs(Number(tx.amount)) : Math.abs(Number(tx.amount)),
+        envelopeId: (tx.envelope_id != null && tx.envelope_id !== '') ? tx.envelope_id : null,
+        categoryId: (tx.category_id != null && tx.category_id !== '') ? tx.category_id : null,
+        subcategoryId: (tx.subcategory_id != null && tx.subcategory_id !== '') ? tx.subcategory_id : null,
+        created_at: tx.created_at
+      })) as Transaction[];
+    } catch (error) {
+      console.error('Erro ao buscar transações filtradas:', error);
+      throw error;
+    }
+  },
+
   async create(transaction: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
     const absAmount = Math.abs(Number(transaction.amount));
+    if (transaction.categoryId != null && transaction.categoryId !== '' && (transaction.subcategoryId == null || transaction.subcategoryId === '')) {
+      throw new Error('Se categoria for informada, a subcategoria é obrigatória.');
+    }
 
     const { data, error } = await supabase
       .from('transactions')
@@ -84,7 +143,9 @@ export const transactionService = {
         type: transaction.type,
         description: transaction.description,
         amount: absAmount,
-        envelope_id: transaction.envelopeId || null
+        envelope_id: transaction.envelopeId || null,
+        category_id: transaction.categoryId || null,
+        subcategory_id: transaction.subcategoryId || null
       }])
       .select('*')
       .single();
@@ -101,7 +162,9 @@ export const transactionService = {
       type: data.type,
       description: data.description,
       amount: data.type === 'debit' ? -Number(data.amount) : Number(data.amount),
-      envelopeId: data.envelope_id
+      envelopeId: data.envelope_id,
+      categoryId: data.category_id ?? null,
+      subcategoryId: data.subcategory_id ?? null
     } as Transaction;
   },
 
@@ -112,17 +175,25 @@ export const transactionService = {
         .eq('id', id)
         .single();
 
+    if (transaction.categoryId != null && transaction.categoryId !== '' && (transaction.subcategoryId == null || transaction.subcategoryId === '')) {
+      throw new Error('Se categoria for informada, a subcategoria é obrigatória.');
+    }
+
     const absAmount = transaction.amount !== undefined ? Math.abs(Number(transaction.amount)) : undefined;
+
+    const updatePayload: Record<string, unknown> = {
+      date: transaction.date,
+      type: transaction.type,
+      description: transaction.description,
+      amount: absAmount,
+      envelope_id: transaction.envelopeId
+    };
+    if (transaction.categoryId !== undefined) updatePayload.category_id = transaction.categoryId || null;
+    if (transaction.subcategoryId !== undefined) updatePayload.subcategory_id = transaction.subcategoryId || null;
 
     const { data, error } = await supabase
       .from('transactions')
-      .update({
-        date: transaction.date,
-        type: transaction.type,
-        description: transaction.description,
-        amount: absAmount,
-        envelope_id: transaction.envelopeId
-      })
+      .update(updatePayload)
       .eq('id', id)
       .select('*')
       .single();
@@ -143,7 +214,9 @@ export const transactionService = {
       type: data.type,
       description: data.description,
       amount: data.type === 'debit' ? -Number(data.amount) : Number(data.amount),
-      envelopeId: data.envelope_id
+      envelopeId: data.envelope_id,
+      categoryId: data.category_id ?? null,
+      subcategoryId: data.subcategory_id ?? null
     } as Transaction;
   },
 
@@ -263,5 +336,40 @@ export const transactionService = {
 
     await Promise.all(refreshPromises);
     console.log('✅ transactionService.bulkUpdateEnvelope: executado com sucesso');
+  },
+
+  async updateCategory(transactionId: string, categoryId: string | null, subcategoryId: string | null) {
+    if (categoryId != null && categoryId !== '' && (subcategoryId == null || subcategoryId === '')) {
+      throw new Error('Se categoria for informada, a subcategoria é obrigatória.');
+    }
+    const { error } = await supabase
+      .from('transactions')
+      .update({
+        category_id: categoryId || null,
+        subcategory_id: subcategoryId || null
+      })
+      .eq('id', transactionId);
+    if (error) {
+      console.error('[transactionService] updateCategory:', error.message);
+      throw error;
+    }
+  },
+
+  async bulkUpdateCategory(transactionIds: string[], categoryId: string | null, subcategoryId: string | null) {
+    if (!transactionIds || transactionIds.length === 0) return;
+    if (categoryId != null && categoryId !== '' && (subcategoryId == null || subcategoryId === '')) {
+      throw new Error('Se categoria for informada, a subcategoria é obrigatória.');
+    }
+    const { error } = await supabase
+      .from('transactions')
+      .update({
+        category_id: categoryId || null,
+        subcategory_id: subcategoryId || null
+      })
+      .in('id', transactionIds);
+    if (error) {
+      console.error('[transactionService] bulkUpdateCategory:', error.message);
+      throw error;
+    }
   }
 };
