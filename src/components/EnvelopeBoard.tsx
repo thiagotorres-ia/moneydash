@@ -15,7 +15,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ArrowRightLeft, Plus, Pencil, Trash2, LayoutGrid } from 'lucide-react';
-import { Envelope, EnvelopeTypeRecord } from '../types';
+import { Category, Envelope, EnvelopeTransferPayload, EnvelopeTypeRecord } from '../types';
 import { formatCurrency } from '../utils/format';
 import { Button } from './Button';
 import { Modal } from './Modal';
@@ -132,7 +132,8 @@ const SortableEnvelopeCard: React.FC<EnvelopeProps> = ({
 interface EnvelopeBoardProps {
   envelopes: Envelope[];
   setEnvelopes: (envelopes: Envelope[]) => void;
-  onTransfer: (fromId: string, toId: string, amount: number) => Promise<void>;
+  categories: Category[];
+  onTransfer: (payload: EnvelopeTransferPayload) => Promise<void>;
   onCreateEnvelope: (data: { code: string; name: string; envelope_type_id: string }) => void;
   onEditEnvelope: (id: string, code: string, name: string, envelope_type_id: string) => void;
   onDeleteEnvelope: (id: string) => void;
@@ -142,22 +143,31 @@ interface EnvelopeBoardProps {
   isTransferring: boolean;
 }
 
-export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({ 
-  envelopes, 
-  setEnvelopes, 
-  onTransfer, 
+const getDefaultTransferDate = () => new Date().toISOString().split('T')[0];
+
+export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
+  envelopes,
+  setEnvelopes,
+  categories,
+  onTransfer,
   onCreateEnvelope,
   onEditEnvelope,
   onDeleteEnvelope,
   isCreating,
   isEditing,
   isDeleting,
-  isTransferring
+  isTransferring,
 }) => {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferDate, setTransferDate] = useState(getDefaultTransferDate);
   const [transferFrom, setTransferFrom] = useState('');
   const [transferTo, setTransferTo] = useState('');
+  const [transferOriginCategoryId, setTransferOriginCategoryId] = useState('');
+  const [transferOriginSubcategoryId, setTransferOriginSubcategoryId] = useState('');
+  const [transferDestCategoryId, setTransferDestCategoryId] = useState('');
+  const [transferDestSubcategoryId, setTransferDestSubcategoryId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
+  const [showTransferConfirmation, setShowTransferConfirmation] = useState(false);
 
   const [envelopeTypes, setEnvelopeTypes] = useState<EnvelopeTypeRecord[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -180,6 +190,28 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
   useEffect(() => {
     fetchEnvelopeTypes();
   }, [fetchEnvelopeTypes]);
+
+  useEffect(() => {
+    if (isTransferModalOpen) {
+      setTransferDate(getDefaultTransferDate());
+      setTransferFrom('');
+      setTransferTo('');
+      setTransferOriginCategoryId('');
+      setTransferOriginSubcategoryId('');
+      setTransferDestCategoryId('');
+      setTransferDestSubcategoryId('');
+      setTransferAmount('');
+      setShowTransferConfirmation(false);
+    }
+  }, [isTransferModalOpen]);
+
+  useEffect(() => {
+    setTransferOriginSubcategoryId('');
+  }, [transferOriginCategoryId]);
+
+  useEffect(() => {
+    setTransferDestSubcategoryId('');
+  }, [transferDestCategoryId]);
 
   const [deletingEnvelope, setDeletingEnvelope] = useState<Envelope | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -211,6 +243,34 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
     const startIndex = currentPage * ITEMS_PER_PAGE;
     return sortedEnvelopes.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   }, [sortedEnvelopes, currentPage]);
+
+  const envelopesWithBalance = useMemo(
+    () =>
+      sortedEnvelopes.map((e) => ({
+        ...e,
+        name: `${e.name} (${formatCurrency(e.amount)})`,
+      })),
+    [sortedEnvelopes]
+  );
+
+  const sortedCategories = useMemo(
+    () => [...(categories ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    [categories]
+  );
+
+  const originSubcategories = useMemo(() => {
+    if (!transferOriginCategoryId) return [];
+    const cat = sortedCategories.find((c) => c.id === transferOriginCategoryId);
+    const subs = cat?.sub_categories ?? [];
+    return [...subs].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [transferOriginCategoryId, sortedCategories]);
+
+  const destSubcategories = useMemo(() => {
+    if (!transferDestCategoryId) return [];
+    const cat = sortedCategories.find((c) => c.id === transferDestCategoryId);
+    const subs = cat?.sub_categories ?? [];
+    return [...subs].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [transferDestCategoryId, sortedCategories]);
 
   const totalPages = useMemo(
     () => Math.ceil(envelopes.length / ITEMS_PER_PAGE),
@@ -289,20 +349,48 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
     setIsCreateModalOpen(false);
   };
 
-  const handleTransferSubmit = async (e: React.FormEvent) => {
+  const handleTransferConferir = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!transferFrom || !transferTo || !transferAmount) return;
-    
-    try {
-      await onTransfer(transferFrom, transferTo, Number(transferAmount));
-      setIsTransferModalOpen(false);
-      setTransferFrom('');
-      setTransferTo('');
-      setTransferAmount('');
-    } catch (err) {
-      console.error(err);
+    if (canSubmitTransfer && !insufficientBalance) {
+      setShowTransferConfirmation(true);
     }
   };
+
+  const executeTransfer = async () => {
+    if (!transferFrom || !transferTo || !transferAmount) return;
+
+    const amountNum = Number(transferAmount);
+    if (amountNum <= 0) return;
+
+    const originEnv = sortedEnvelopes.find((e) => e.id === transferFrom);
+    if (originEnv && Number(originEnv.amount) < amountNum) return;
+
+    try {
+      await onTransfer({
+        transferDate,
+        originEnvelopeId: transferFrom,
+        originCategoryId: transferOriginCategoryId || null,
+        originSubcategoryId: transferOriginSubcategoryId || null,
+        destEnvelopeId: transferTo,
+        destCategoryId: transferDestCategoryId || null,
+        destSubcategoryId: transferDestSubcategoryId || null,
+        amount: amountNum,
+      });
+      setIsTransferModalOpen(false);
+    } catch (err) {
+      console.error('[EnvelopeBoard] Erro na transferência:', err);
+    }
+  };
+
+  const canSubmitTransfer =
+    transferFrom &&
+    transferTo &&
+    transferAmount &&
+    Number(transferAmount) > 0 &&
+    transferFrom !== transferTo;
+  const originBalance = sortedEnvelopes.find((e) => e.id === transferFrom)?.amount ?? 0;
+  const transferAmountNum = Number(transferAmount) || 0;
+  const insufficientBalance = canSubmitTransfer && Number(originBalance) < transferAmountNum;
 
   return (
     <div className="space-y-6">
@@ -384,54 +472,187 @@ export const EnvelopeBoard: React.FC<EnvelopeBoardProps> = ({
         onClose={() => !isTransferring && setIsTransferModalOpen(false)}
         title="Transferência entre Envelopes"
       >
-        <form onSubmit={handleTransferSubmit} className="space-y-5">
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Envelope Origem
-            </label>
-            <SearchableSelect
-              options={sortedEnvelopes}
-              value={transferFrom}
-              onChange={setTransferFrom}
-              placeholder="Pesquisar envelope de saída..."
-              disabled={isTransferring}
-            />
+        {showTransferConfirmation ? (
+          <div className="space-y-6">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Deseja realmente transferir o valor <strong>{formatCurrency(transferAmountNum)}</strong> de{' '}
+              <strong>
+                {sortedEnvelopes.find((e) => e.id === transferFrom)?.code} - {sortedEnvelopes.find((e) => e.id === transferFrom)?.name}
+              </strong>{' '}
+              para{' '}
+              <strong>
+                {sortedEnvelopes.find((e) => e.id === transferTo)?.code} - {sortedEnvelopes.find((e) => e.id === transferTo)?.name}
+              </strong>
+              ?
+            </p>
+            <div className="flex justify-end gap-3 pt-4">
+              <Button type="button" variant="ghost" onClick={() => setShowTransferConfirmation(false)} disabled={isTransferring}>
+                Voltar
+              </Button>
+              <Button type="button" onClick={executeTransfer} disabled={isTransferring} isLoading={isTransferring}>
+                Confirmar
+              </Button>
+            </div>
           </div>
+        ) : (
+          <form onSubmit={handleTransferConferir} className="space-y-5">
+            {/* Bloco 1 - Dados da Transferência */}
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 p-4 sm:p-5 space-y-4">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Dados da Transferência</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Data"
+                  type="date"
+                  value={transferDate}
+                  onChange={(e) => setTransferDate(e.target.value)}
+                  required
+                  id="transfer-date"
+                  disabled={isTransferring}
+                />
+                <Input
+                  label="Valor (R$)"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={transferAmount}
+                  onChange={(e) => setTransferAmount(e.target.value)}
+                  placeholder="0,00"
+                  required
+                  id="transfer-amount"
+                  disabled={isTransferring}
+                />
+              </div>
+            </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Envelope Destino
-            </label>
-            <SearchableSelect
-              options={sortedEnvelopes.filter(e => e.id !== transferFrom)}
-              value={transferTo}
-              onChange={setTransferTo}
-              placeholder="Pesquisar envelope de destino..."
-              disabled={isTransferring}
-            />
-          </div>
+            {/* Bloco 2 - Dados de Origem */}
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 p-4 sm:p-5 space-y-3">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Dados de Origem</h4>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Envelope Origem</label>
+                <SearchableSelect
+                  options={envelopesWithBalance}
+                  value={transferFrom}
+                  onChange={setTransferFrom}
+                  placeholder="Pesquisar envelope de saída..."
+                  disabled={isTransferring}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="transfer-origin-category" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Categoria Origem (opcional)
+                </label>
+                <select
+                  id="transfer-origin-category"
+                  value={transferOriginCategoryId}
+                  onChange={(e) => setTransferOriginCategoryId(e.target.value)}
+                  disabled={isTransferring}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2.5 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer transition-colors duration-200"
+                  aria-label="Categoria de origem"
+                >
+                  <option value="">Sem categoria</option>
+                  {sortedCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="transfer-origin-subcategory" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Subcategoria Origem (opcional)
+                </label>
+                <select
+                  id="transfer-origin-subcategory"
+                  value={transferOriginSubcategoryId}
+                  onChange={(e) => setTransferOriginSubcategoryId(e.target.value)}
+                  disabled={isTransferring || !transferOriginCategoryId}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2.5 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer disabled:opacity-50 transition-colors duration-200"
+                  aria-label="Subcategoria de origem"
+                >
+                  <option value="">Sem categoria</option>
+                  {originSubcategories.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-          <Input
-            label="Valor (R$)"
-            type="number"
-            step="0.01"
-            value={transferAmount}
-            onChange={(e) => setTransferAmount(e.target.value)}
-            placeholder="0,00"
-            required
-            id="transfer-amount"
-            disabled={isTransferring}
-          />
+            {/* Bloco 3 - Dados de Destino */}
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 p-4 sm:p-5 space-y-3">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Dados de Destino</h4>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Envelope Destino</label>
+                <SearchableSelect
+                  options={envelopesWithBalance.filter((e) => e.id !== transferFrom)}
+                  value={transferTo}
+                  onChange={setTransferTo}
+                  placeholder="Pesquisar envelope de destino..."
+                  disabled={isTransferring}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="transfer-dest-category" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Categoria Destino (opcional)
+                </label>
+                <select
+                  id="transfer-dest-category"
+                  value={transferDestCategoryId}
+                  onChange={(e) => setTransferDestCategoryId(e.target.value)}
+                  disabled={isTransferring}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2.5 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer transition-colors duration-200"
+                  aria-label="Categoria de destino"
+                >
+                  <option value="">Sem categoria</option>
+                  {sortedCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="transfer-dest-subcategory" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Subcategoria Destino (opcional)
+                </label>
+                <select
+                  id="transfer-dest-subcategory"
+                  value={transferDestSubcategoryId}
+                  onChange={(e) => setTransferDestSubcategoryId(e.target.value)}
+                  disabled={isTransferring || !transferDestCategoryId}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2.5 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none cursor-pointer disabled:opacity-50 transition-colors duration-200"
+                  aria-label="Subcategoria de destino"
+                >
+                  <option value="">Sem categoria</option>
+                  {destSubcategories.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="ghost" onClick={() => setIsTransferModalOpen(false)} disabled={isTransferring}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={!transferFrom || !transferTo || !transferAmount || isTransferring} isLoading={isTransferring}>
-              Transferir Agora
-            </Button>
-          </div>
-        </form>
+            {insufficientBalance && (
+              <p className="text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg">
+                Saldo insuficiente no envelope de origem.
+              </p>
+            )}
+
+            <div className="flex justify-end gap-3 pt-4">
+              <Button type="button" variant="ghost" onClick={() => setIsTransferModalOpen(false)} disabled={isTransferring}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={!canSubmitTransfer || insufficientBalance || isTransferring}
+              >
+                Conferir
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Create / Edit Envelope Modal */}

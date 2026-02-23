@@ -4,8 +4,9 @@ import { Navbar } from '../components/Navbar';
 import { Button } from '../components/Button';
 import { categoryService } from '../services/categoryService';
 import { transactionService } from '../services/transactionService';
+import { getInPeriod as getTransferLogInPeriod } from '../services/transferLogService';
 import { formatCurrency } from '../utils/format';
-import { Category, Transaction } from '../types';
+import { Category, EnvelopeTransferLogEntry, Transaction } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { BarChart3, Loader2, AlertCircle, TrendingUp, TrendingDown, Wallet, ChevronRight, ChevronDown } from 'lucide-react';
 
@@ -75,10 +76,23 @@ export default function SpendingByCategoryReport() {
   const [filterSubcategoryId, setFilterSubcategoryId] = useState<string>('');
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transferLogEntries, setTransferLogEntries] = useState<EnvelopeTransferLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(new Set());
+  type SectionKey = 'chart-receita' | 'chart-despesa' | 'table-receita' | 'table-despesa';
+  const [expandedSections, setExpandedSections] = useState<Set<SectionKey>>(
+    () => new Set(['chart-receita', 'chart-despesa', 'table-receita', 'table-despesa'])
+  );
+  const toggleSectionExpanded = useCallback((key: SectionKey) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const toggleCategoryExpanded = useCallback((categoryId: string) => {
     setExpandedCategoryIds(prev => {
@@ -109,24 +123,33 @@ export default function SpendingByCategoryReport() {
   const applyFilters = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const { dateFrom, dateTo } = getDateRange(
+      filterMonthStart,
+      filterYearStart,
+      filterMonthEnd,
+      filterYearEnd
+    );
     try {
-      const { dateFrom, dateTo } = getDateRange(
-        filterMonthStart,
-        filterYearStart,
-        filterMonthEnd,
-        filterYearEnd
-      );
-      const data = await transactionService.getFiltered({
-        dateFrom,
-        dateTo,
-        categoryId: filterCategoryId || undefined,
-        subcategoryId: filterSubcategoryId || undefined
-      });
-      setTransactions(data || []);
+      const [txData, logData] = await Promise.all([
+        transactionService.getFiltered({
+          dateFrom,
+          dateTo,
+          categoryId: filterCategoryId || undefined,
+          subcategoryId: filterSubcategoryId || undefined
+        }),
+        getTransferLogInPeriod(dateFrom, dateTo).catch(err => {
+          console.error('Erro ao buscar log de transferências:', err);
+          addToast('Não foi possível carregar as transferências para o relatório.', 'error');
+          return [] as EnvelopeTransferLogEntry[];
+        })
+      ]);
+      setTransactions(txData || []);
+      setTransferLogEntries(logData ?? []);
     } catch (err) {
       console.error('Erro ao buscar transações:', err);
       setError('Não foi possível carregar os lançamentos. Tente novamente.');
       setTransactions([]);
+      setTransferLogEntries([]);
       addToast('Erro ao aplicar filtros.', 'error');
     } finally {
       setLoading(false);
@@ -155,103 +178,160 @@ export default function SpendingByCategoryReport() {
       if (tx.type === 'credit') receitas += abs;
       else gastos += abs;
     });
+    transferLogEntries.forEach(entry => {
+      const amt = Number(entry.amount) || 0;
+      if (entry.origin_category_id != null && entry.origin_subcategory_id != null) gastos += amt;
+      if (entry.dest_category_id != null && entry.dest_subcategory_id != null) receitas += amt;
+    });
     return {
       totalReceitas: Math.round(receitas * 100) / 100,
       totalGastos: Math.round(gastos * 100) / 100,
       saldo: Math.round((receitas - gastos) * 100) / 100
     };
-  }, [transactions]);
+  }, [transactions, transferLogEntries]);
 
-  const { categoryBlocks, semCategoriaBlock, chartMax } = useMemo(() => {
-    const map = new Map<string, number>();
+  const {
+    categoryBlocksDespesa,
+    semCategoriaDespesa,
+    chartMaxDespesa,
+    categoryBlocksReceita,
+    semCategoriaReceita,
+    chartMaxReceita
+  } = useMemo(() => {
+    const catById = new Map(categories.map(c => [c.id, c]));
+    const totalG = totalGastos;
+    const totalR = totalReceitas;
+
+    function buildBlocksAndSem(
+      map: Map<string, number>,
+      totalForPct: number
+    ): { blocks: CategoryBlock[]; semCategoriaBlock: SemCategoriaBlock } {
+      const gastosPorCategoria = new Map<string, number>();
+      map.forEach((val, key) => {
+        const cid = key.split('|')[0];
+        gastosPorCategoria.set(cid, (gastosPorCategoria.get(cid) ?? 0) + val);
+      });
+      const blocks: CategoryBlock[] = [];
+      const semCategoriaRows: Array<{ subcategoryName: string; gastos: number; pctPeriodo: number }> = [];
+      let semCategoriaTotal = 0;
+      const cids = Array.from(new Set(Array.from(map.keys()).map(k => k.split('|')[0])));
+
+      for (const cid of cids) {
+        if (cid === '__sem_categoria__') {
+          const subKeys = Array.from(map.keys()).filter(k => k.startsWith(cid + '|'));
+          let total = 0;
+          for (const key of subKeys) {
+            const g = map.get(key) ?? 0;
+            const gr = Math.round(g * 100) / 100;
+            total += g;
+            semCategoriaRows.push({
+              subcategoryName: '—',
+              gastos: gr,
+              pctPeriodo: totalForPct > 0 ? (gr / totalForPct) * 100 : 0
+            });
+          }
+          semCategoriaTotal = total;
+          continue;
+        }
+        const cat = catById.get(cid);
+        const categoryName = cat?.name ?? 'Sem categoria';
+        const gastosCat = gastosPorCategoria.get(cid) ?? 0;
+        const gastosCatRounded = Math.round(gastosCat * 100) / 100;
+        const subKeys = Array.from(map.keys()).filter(k => k.startsWith(cid + '|'));
+        const subcategories: SubcategoryRow[] = subKeys.map(key => {
+          const g = map.get(key) ?? 0;
+          const gr = Math.round(g * 100) / 100;
+          const sid = key.split('|')[1];
+          const subcategoryId = sid === '__sem_sub__' ? null : sid;
+          let subcategoryName = '—';
+          if (subcategoryId && cat?.sub_categories) {
+            const sub = cat.sub_categories.find(s => s.id === subcategoryId);
+            subcategoryName = sub?.name ?? '—';
+          }
+          return {
+            subcategoryId,
+            subcategoryName,
+            gastos: gr,
+            pctPeriodo: totalForPct > 0 ? (gr / totalForPct) * 100 : 0,
+            pctCategoria: gastosCat > 0 ? (gr / gastosCat) * 100 : 0
+          };
+        });
+        subcategories.sort((a, b) => a.subcategoryName.localeCompare(b.subcategoryName));
+        blocks.push({
+          categoryId: cid,
+          categoryName,
+          gastos: gastosCatRounded,
+          pctPeriodo: totalForPct > 0 ? (gastosCatRounded / totalForPct) * 100 : 0,
+          subcategories
+        });
+      }
+      blocks.sort((a, b) => b.gastos - a.gastos);
+      const semCategoriaBlock: SemCategoriaBlock = {
+        gastos: Math.round(semCategoriaTotal * 100) / 100,
+        pctPeriodo: totalForPct > 0 ? (semCategoriaTotal / totalForPct) * 100 : 0,
+        rows: semCategoriaRows
+      };
+      return { blocks, semCategoriaBlock };
+    }
+
+    const mapDebit = new Map<string, number>();
+    const mapCredit = new Map<string, number>();
     transactions.forEach(tx => {
-      if (tx.type !== 'debit') return;
       const cid = tx.categoryId ?? '__sem_categoria__';
       const sid = tx.subcategoryId ?? '__sem_sub__';
       const key = `${cid}|${sid}`;
       const abs = Math.abs(Number(tx.amount)) || 0;
-      map.set(key, (map.get(key) ?? 0) + abs);
+      if (tx.type === 'debit') mapDebit.set(key, (mapDebit.get(key) ?? 0) + abs);
+      else mapCredit.set(key, (mapCredit.get(key) ?? 0) + abs);
     });
-    const gastosPorCategoria = new Map<string, number>();
-    map.forEach((gastos, key) => {
-      const cid = key.split('|')[0];
-      gastosPorCategoria.set(cid, (gastosPorCategoria.get(cid) ?? 0) + gastos);
-    });
-    const catById = new Map(categories.map(c => [c.id, c]));
 
-    const blocks: CategoryBlock[] = [];
-    const semCategoriaRows: Array<{ subcategoryName: string; gastos: number; pctPeriodo: number }> = [];
-    let semCategoriaTotal = 0;
-
-    const cids = Array.from(new Set(Array.from(map.keys()).map(k => k.split('|')[0])));
-    for (const cid of cids) {
-      if (cid === '__sem_categoria__') {
-        const subKeys = Array.from(map.keys()).filter(k => k.startsWith(cid + '|'));
-        let total = 0;
-        for (const key of subKeys) {
-          const g = map.get(key) ?? 0;
-          const gr = Math.round(g * 100) / 100;
-          total += g;
-          semCategoriaRows.push({
-            subcategoryName: '—',
-            gastos: gr,
-            pctPeriodo: totalGastos > 0 ? (gr / totalGastos) * 100 : 0
-          });
+    transferLogEntries.forEach(entry => {
+      const amt = Number(entry.amount) || 0;
+      if (entry.origin_category_id != null && entry.origin_subcategory_id != null) {
+        const matchFilter =
+          !filterCategoryId ||
+          (entry.origin_category_id === filterCategoryId &&
+            (!filterSubcategoryId || entry.origin_subcategory_id === filterSubcategoryId));
+        if (matchFilter) {
+          const key = `${entry.origin_category_id}|${entry.origin_subcategory_id}`;
+          mapDebit.set(key, (mapDebit.get(key) ?? 0) + amt);
         }
-        semCategoriaTotal = total;
-        continue;
       }
-      const cat = catById.get(cid);
-      const categoryName = cat?.name ?? 'Sem categoria';
-      const gastosCat = gastosPorCategoria.get(cid) ?? 0;
-      const gastosCatRounded = Math.round(gastosCat * 100) / 100;
-      const subKeys = Array.from(map.keys()).filter(k => k.startsWith(cid + '|'));
-      const subcategories: SubcategoryRow[] = subKeys.map(key => {
-        const g = map.get(key) ?? 0;
-        const gr = Math.round(g * 100) / 100;
-        const sid = key.split('|')[1];
-        const subcategoryId = sid === '__sem_sub__' ? null : sid;
-        let subcategoryName = '—';
-        if (subcategoryId && cat?.sub_categories) {
-          const sub = cat.sub_categories.find(s => s.id === subcategoryId);
-          subcategoryName = sub?.name ?? '—';
+      if (entry.dest_category_id != null && entry.dest_subcategory_id != null) {
+        const matchFilter =
+          !filterCategoryId ||
+          (entry.dest_category_id === filterCategoryId &&
+            (!filterSubcategoryId || entry.dest_subcategory_id === filterSubcategoryId));
+        if (matchFilter) {
+          const key = `${entry.dest_category_id}|${entry.dest_subcategory_id}`;
+          mapCredit.set(key, (mapCredit.get(key) ?? 0) + amt);
         }
-        return {
-          subcategoryId,
-          subcategoryName,
-          gastos: gr,
-          pctPeriodo: totalGastos > 0 ? (gr / totalGastos) * 100 : 0,
-          pctCategoria: gastosCat > 0 ? (gr / gastosCat) * 100 : 0
-        };
-      });
-      subcategories.sort((a, b) => a.subcategoryName.localeCompare(b.subcategoryName));
-      blocks.push({
-        categoryId: cid,
-        categoryName,
-        gastos: gastosCatRounded,
-        pctPeriodo: totalGastos > 0 ? (gastosCatRounded / totalGastos) * 100 : 0,
-        subcategories
-      });
-    }
-    blocks.sort((a, b) => b.gastos - a.gastos);
+      }
+    });
 
-    const semCategoriaBlock: SemCategoriaBlock = {
-      gastos: Math.round(semCategoriaTotal * 100) / 100,
-      pctPeriodo: totalGastos > 0 ? (semCategoriaTotal / totalGastos) * 100 : 0,
-      rows: semCategoriaRows
-    };
+    const { blocks: blocksDespesa, semCategoriaBlock: semCategoriaDespesa } = buildBlocksAndSem(mapDebit, totalG);
+    const { blocks: blocksReceita, semCategoriaBlock: semCategoriaReceita } = buildBlocksAndSem(mapCredit, totalR);
 
-    const allMax = Math.max(
-      ...blocks.map(b => b.gastos),
-      semCategoriaBlock.gastos,
+    const chartMaxDespesa = Math.max(
+      ...blocksDespesa.map(b => b.gastos),
+      semCategoriaDespesa.gastos,
       1
     );
+    const chartMaxReceita = Math.max(
+      ...blocksReceita.map(b => b.gastos),
+      semCategoriaReceita.gastos,
+      1
+    );
+
     return {
-      categoryBlocks: blocks,
-      semCategoriaBlock,
-      chartMax: allMax
+      categoryBlocksDespesa: blocksDespesa,
+      semCategoriaDespesa,
+      chartMaxDespesa,
+      categoryBlocksReceita: blocksReceita,
+      semCategoriaReceita,
+      chartMaxReceita
     };
-  }, [transactions, categories, totalGastos]);
+  }, [transactions, transferLogEntries, categories, totalGastos, totalReceitas, filterCategoryId, filterSubcategoryId]);
 
   const months = [
     { value: 1, label: 'Janeiro' }, { value: 2, label: 'Fevereiro' }, { value: 3, label: 'Março' },
@@ -398,180 +478,457 @@ export default function SpendingByCategoryReport() {
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-10 h-10 animate-spin text-primary-500" />
               </div>
-            ) : transactions.length === 0 ? (
+            ) : transactions.length === 0 && transferLogEntries.length === 0 ? (
               <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
                 <BarChart3 className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-600 dark:text-gray-400 font-medium">Nenhum lançamento encontrado para os filtros selecionados.</p>
               </div>
             ) : (
               <>
-                {/* Gráfico de gastos por categoria (drill-down) */}
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6 mb-6 shadow-sm">
+                {/* Gráfico: Receitas e Despesas por categoria em frames separados */}
+                <div className="mb-6">
                   <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Gastos por categoria</h2>
-                  <div className="space-y-4">
-                    {categoryBlocks.map(block => (
-                      <div key={block.categoryId} className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleCategoryExpanded(block.categoryId)}
-                            className="p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 cursor-pointer transition-colors duration-200 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-                            aria-expanded={expandedCategoryIds.has(block.categoryId)}
-                            aria-label={expandedCategoryIds.has(block.categoryId) ? `Recolher ${block.categoryName}` : `Expandir ${block.categoryName}`}
-                          >
-                            {expandedCategoryIds.has(block.categoryId) ? (
-                              <ChevronDown className="w-5 h-5" aria-hidden />
-                            ) : (
-                              <ChevronRight className="w-5 h-5" aria-hidden />
-                            )}
-                          </button>
-                          <div className="flex-1 min-w-0 flex justify-between items-center gap-2">
-                            <span className="font-medium text-gray-900 dark:text-white truncate">{block.categoryName}</span>
-                            <span className="text-sm text-gray-700 dark:text-gray-300 font-medium shrink-0">{formatCurrency(block.gastos)}</span>
-                            <span className="text-sm text-gray-500 dark:text-gray-400 shrink-0">{formatPct(block.pctPeriodo)}</span>
-                          </div>
-                        </div>
-                        <div className="h-6 rounded overflow-hidden bg-gray-100 dark:bg-gray-700 transition-all duration-300">
-                          <div
-                            className="h-full bg-slate-500 dark:bg-slate-400 transition-all duration-300"
-                            style={{ width: `${(block.gastos / chartMax) * 100}%`, minWidth: block.gastos > 0 ? '4px' : 0 }}
-                          />
-                        </div>
-                        {expandedCategoryIds.has(block.categoryId) && block.subcategories.length > 0 && (
-                          <div className="pl-6 space-y-3 pt-1">
-                            {block.subcategories.map((sub, j) => (
-                              <div key={j} className="space-y-1">
-                                <div className="flex justify-between text-xs gap-2">
-                                  <span className="font-medium text-gray-700 dark:text-gray-300 truncate">{sub.subcategoryName}</span>
-                                  <span className="text-gray-700 dark:text-gray-300 shrink-0">{formatCurrency(sub.gastos)}</span>
-                                  <span className="text-gray-500 dark:text-gray-400 shrink-0">{formatPct(sub.pctPeriodo)} do total · {formatPct(sub.pctCategoria)} da categoria</span>
-                                </div>
-                                <div
-                                  className="h-5 rounded overflow-hidden bg-gray-100 dark:bg-gray-700"
-                                  title={`${formatCurrency(sub.gastos)} · ${formatPct(sub.pctPeriodo)} do período · ${formatPct(sub.pctCategoria)} da categoria`}
-                                >
-                                  <div
-                                    className="h-full bg-slate-500 dark:bg-slate-400 transition-all duration-300"
-                                    style={{ width: `${(sub.gastos / chartMax) * 100}%`, minWidth: sub.gastos > 0 ? '4px' : 0 }}
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                  <div className="space-y-6">
+                    {/* Frame Receitas por categoria (verde) */}
+                    <section
+                      aria-labelledby="chart-receitas-heading"
+                      className="rounded-xl border-2 border-emerald-300 dark:border-emerald-600 bg-white dark:bg-gray-800 shadow-sm overflow-hidden transition-all duration-200"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSectionExpanded('chart-receita')}
+                        className="w-full flex items-center gap-2 p-4 sm:p-5 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset"
+                        aria-expanded={expandedSections.has('chart-receita')}
+                        aria-label={expandedSections.has('chart-receita') ? 'Recolher seção Receitas por categoria' : 'Expandir seção Receitas por categoria'}
+                      >
+                        {expandedSections.has('chart-receita') ? (
+                          <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0" aria-hidden />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0" aria-hidden />
                         )}
-                      </div>
-                    ))}
-                  </div>
-                  {semCategoriaBlock.gastos > 0 && (
-                    <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                      <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Sem categoria</h3>
-                      <div className="space-y-3">
-                        {semCategoriaBlock.rows.map((row, i) => (
-                          <div key={i} className="space-y-1">
-                            <div className="flex justify-between text-xs gap-2">
-                              <span className="font-medium text-gray-600 dark:text-gray-400">{row.subcategoryName}</span>
-                              <span className="text-gray-700 dark:text-gray-300 shrink-0">{formatCurrency(row.gastos)}</span>
-                              <span className="text-gray-500 dark:text-gray-400 shrink-0">{formatPct(row.pctPeriodo)}</span>
-                            </div>
-                            <div className="h-5 rounded overflow-hidden bg-gray-100 dark:bg-gray-700">
-                              <div
-                                className="h-full bg-slate-500 dark:bg-slate-400 transition-all duration-300"
-                                style={{ width: `${(row.gastos / chartMax) * 100}%`, minWidth: row.gastos > 0 ? '4px' : 0 }}
-                              />
-                            </div>
+                        <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" aria-hidden />
+                        <h3 id="chart-receitas-heading" className="text-lg font-bold text-gray-900 dark:text-white">Receitas por categoria</h3>
+                      </button>
+                      {expandedSections.has('chart-receita') && (
+                        <div className="px-4 sm:p-6 pt-0 pb-4 sm:pb-6 border-t border-gray-100 dark:border-gray-700">
+                          <div className="space-y-4 pt-4">
+                            {categoryBlocksReceita.map(block => {
+                              const expandKey = `receita-${block.categoryId}`;
+                              return (
+                                <div key={block.categoryId} className="space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleCategoryExpanded(expandKey)}
+                                      className="p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 cursor-pointer transition-colors duration-200 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                                      aria-expanded={expandedCategoryIds.has(expandKey)}
+                                      aria-label={expandedCategoryIds.has(expandKey) ? `Recolher ${block.categoryName}` : `Expandir ${block.categoryName}`}
+                                    >
+                                      {expandedCategoryIds.has(expandKey) ? (
+                                        <ChevronDown className="w-5 h-5" aria-hidden />
+                                      ) : (
+                                        <ChevronRight className="w-5 h-5" aria-hidden />
+                                      )}
+                                    </button>
+                                    <div className="flex-1 min-w-0 flex justify-between items-center gap-2">
+                                      <span className="font-medium text-gray-900 dark:text-white truncate">{block.categoryName}</span>
+                                      <span className="text-sm text-gray-700 dark:text-gray-300 font-medium shrink-0">{formatCurrency(block.gastos)}</span>
+                                      <span className="text-sm text-gray-500 dark:text-gray-400 shrink-0">{formatPct(block.pctPeriodo)}</span>
+                                    </div>
+                                  </div>
+                                  <div className="h-6 rounded overflow-hidden bg-gray-100 dark:bg-gray-700 transition-all duration-300">
+                                    <div
+                                      className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-300"
+                                      style={{ width: `${(block.gastos / chartMaxReceita) * 100}%`, minWidth: block.gastos > 0 ? '4px' : 0 }}
+                                    />
+                                  </div>
+                                  {expandedCategoryIds.has(expandKey) && block.subcategories.length > 0 && (
+                                    <div className="pl-6 space-y-3 pt-1">
+                                      {block.subcategories.map((sub, j) => (
+                                        <div key={j} className="space-y-1">
+                                          <div className="flex justify-between text-xs gap-2">
+                                            <span className="font-medium text-gray-700 dark:text-gray-300 truncate">{sub.subcategoryName}</span>
+                                            <span className="text-gray-700 dark:text-gray-300 shrink-0">{formatCurrency(sub.gastos)}</span>
+                                            <span className="text-gray-500 dark:text-gray-400 shrink-0">{formatPct(sub.pctPeriodo)} do total · {formatPct(sub.pctCategoria)} da categoria</span>
+                                          </div>
+                                          <div
+                                            className="h-5 rounded overflow-hidden bg-gray-100 dark:bg-gray-700"
+                                            title={`${formatCurrency(sub.gastos)} · ${formatPct(sub.pctPeriodo)} do período · ${formatPct(sub.pctCategoria)} da categoria`}
+                                          >
+                                            <div
+                                              className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-300"
+                                              style={{ width: `${(sub.gastos / chartMaxReceita) * 100}%`, minWidth: sub.gastos > 0 ? '4px' : 0 }}
+                                            />
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                          {semCategoriaReceita.gastos > 0 && (
+                            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                              <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Sem categoria</h4>
+                              <div className="space-y-3">
+                                {semCategoriaReceita.rows.map((row, i) => (
+                                  <div key={i} className="space-y-1">
+                                    <div className="flex justify-between text-xs gap-2">
+                                      <span className="font-medium text-gray-600 dark:text-gray-400">{row.subcategoryName}</span>
+                                      <span className="text-gray-700 dark:text-gray-300 shrink-0">{formatCurrency(row.gastos)}</span>
+                                      <span className="text-gray-500 dark:text-gray-400 shrink-0">{formatPct(row.pctPeriodo)}</span>
+                                    </div>
+                                    <div className="h-5 rounded overflow-hidden bg-gray-100 dark:bg-gray-700">
+                                      <div
+                                        className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-300"
+                                        style={{ width: `${(row.gastos / chartMaxReceita) * 100}%`, minWidth: row.gastos > 0 ? '4px' : 0 }}
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+
+                    {/* Frame Despesas por categoria (vermelho) */}
+                    <section
+                      aria-labelledby="chart-despesas-heading"
+                      className="rounded-xl border-2 border-red-300 dark:border-red-600 bg-white dark:bg-gray-800 shadow-sm overflow-hidden transition-all duration-200"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSectionExpanded('chart-despesa')}
+                        className="w-full flex items-center gap-2 p-4 sm:p-5 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset"
+                        aria-expanded={expandedSections.has('chart-despesa')}
+                        aria-label={expandedSections.has('chart-despesa') ? 'Recolher seção Despesas por categoria' : 'Expandir seção Despesas por categoria'}
+                      >
+                        {expandedSections.has('chart-despesa') ? (
+                          <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0" aria-hidden />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0" aria-hidden />
+                        )}
+                        <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" aria-hidden />
+                        <h3 id="chart-despesas-heading" className="text-lg font-bold text-gray-900 dark:text-white">Despesas por categoria</h3>
+                      </button>
+                      {expandedSections.has('chart-despesa') && (
+                        <div className="px-4 sm:p-6 pt-0 pb-4 sm:pb-6 border-t border-gray-100 dark:border-gray-700">
+                          <div className="space-y-4 pt-4">
+                            {categoryBlocksDespesa.map(block => {
+                              const expandKey = `despesa-${block.categoryId}`;
+                              return (
+                                <div key={block.categoryId} className="space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleCategoryExpanded(expandKey)}
+                                      className="p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 cursor-pointer transition-colors duration-200 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                                      aria-expanded={expandedCategoryIds.has(expandKey)}
+                                      aria-label={expandedCategoryIds.has(expandKey) ? `Recolher ${block.categoryName}` : `Expandir ${block.categoryName}`}
+                                    >
+                                      {expandedCategoryIds.has(expandKey) ? (
+                                        <ChevronDown className="w-5 h-5" aria-hidden />
+                                      ) : (
+                                        <ChevronRight className="w-5 h-5" aria-hidden />
+                                      )}
+                                    </button>
+                                    <div className="flex-1 min-w-0 flex justify-between items-center gap-2">
+                                      <span className="font-medium text-gray-900 dark:text-white truncate">{block.categoryName}</span>
+                                      <span className="text-sm text-gray-700 dark:text-gray-300 font-medium shrink-0">{formatCurrency(block.gastos)}</span>
+                                      <span className="text-sm text-gray-500 dark:text-gray-400 shrink-0">{formatPct(block.pctPeriodo)}</span>
+                                    </div>
+                                  </div>
+                                  <div className="h-6 rounded overflow-hidden bg-gray-100 dark:bg-gray-700 transition-all duration-300">
+                                    <div
+                                      className="h-full bg-red-500 dark:bg-red-400 transition-all duration-300"
+                                      style={{ width: `${(block.gastos / chartMaxDespesa) * 100}%`, minWidth: block.gastos > 0 ? '4px' : 0 }}
+                                    />
+                                  </div>
+                                  {expandedCategoryIds.has(expandKey) && block.subcategories.length > 0 && (
+                                    <div className="pl-6 space-y-3 pt-1">
+                                      {block.subcategories.map((sub, j) => (
+                                        <div key={j} className="space-y-1">
+                                          <div className="flex justify-between text-xs gap-2">
+                                            <span className="font-medium text-gray-700 dark:text-gray-300 truncate">{sub.subcategoryName}</span>
+                                            <span className="text-gray-700 dark:text-gray-300 shrink-0">{formatCurrency(sub.gastos)}</span>
+                                            <span className="text-gray-500 dark:text-gray-400 shrink-0">{formatPct(sub.pctPeriodo)} do total · {formatPct(sub.pctCategoria)} da categoria</span>
+                                          </div>
+                                          <div
+                                            className="h-5 rounded overflow-hidden bg-gray-100 dark:bg-gray-700"
+                                            title={`${formatCurrency(sub.gastos)} · ${formatPct(sub.pctPeriodo)} do período · ${formatPct(sub.pctCategoria)} da categoria`}
+                                          >
+                                            <div
+                                              className="h-full bg-red-500 dark:bg-red-400 transition-all duration-300"
+                                              style={{ width: `${(sub.gastos / chartMaxDespesa) * 100}%`, minWidth: sub.gastos > 0 ? '4px' : 0 }}
+                                            />
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {semCategoriaDespesa.gastos > 0 && (
+                            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                              <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Sem categoria</h4>
+                              <div className="space-y-3">
+                                {semCategoriaDespesa.rows.map((row, i) => (
+                                  <div key={i} className="space-y-1">
+                                    <div className="flex justify-between text-xs gap-2">
+                                      <span className="font-medium text-gray-600 dark:text-gray-400">{row.subcategoryName}</span>
+                                      <span className="text-gray-700 dark:text-gray-300 shrink-0">{formatCurrency(row.gastos)}</span>
+                                      <span className="text-gray-500 dark:text-gray-400 shrink-0">{formatPct(row.pctPeriodo)}</span>
+                                    </div>
+                                    <div className="h-5 rounded overflow-hidden bg-gray-100 dark:bg-gray-700">
+                                      <div
+                                        className="h-full bg-red-500 dark:bg-red-400 transition-all duration-300"
+                                        style={{ width: `${(row.gastos / chartMaxDespesa) * 100}%`, minWidth: row.gastos > 0 ? '4px' : 0 }}
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  </div>
                 </div>
 
-                {/* Tabela drill-down */}
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
-                  <h2 className="text-lg font-bold text-gray-900 dark:text-white p-4 sm:p-6 pb-0">Detalhamento por categoria e subcategoria</h2>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 text-left text-gray-600 dark:text-gray-400 uppercase tracking-wider text-xs font-bold">
-                          <th className="px-4 py-3 w-10" scope="col" aria-label="Expandir ou recolher" />
-                          <th className="px-4 py-3">Categoria</th>
-                          <th className="px-4 py-3 text-right">Total Gastos</th>
-                          <th className="px-4 py-3 text-right">% do Período</th>
-                          <th className="px-4 py-3 text-right">% da Categoria</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {categoryBlocks.map(block => (
-                          <React.Fragment key={block.categoryId}>
-                            <tr
-                              className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200 bg-gray-50/80 dark:bg-gray-700/40 font-semibold"
-                            >
-                              <td className="px-4 py-3">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleCategoryExpanded(block.categoryId)}
-                                  className="p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 cursor-pointer transition-colors duration-200 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-                                  aria-expanded={expandedCategoryIds.has(block.categoryId)}
-                                  aria-label={expandedCategoryIds.has(block.categoryId) ? `Recolher ${block.categoryName}` : `Expandir ${block.categoryName}`}
-                                >
-                                  {expandedCategoryIds.has(block.categoryId) ? (
-                                    <ChevronDown className="w-5 h-5" aria-hidden />
-                                  ) : (
-                                    <ChevronRight className="w-5 h-5" aria-hidden />
-                                  )}
-                                </button>
-                              </td>
-                              <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{block.categoryName}</td>
-                              <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(block.gastos)}</td>
-                              <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(block.pctPeriodo)}</td>
-                              <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400">—</td>
-                            </tr>
-                            {expandedCategoryIds.has(block.categoryId) && block.subcategories.map((sub, j) => (
-                              <tr
-                                key={`${block.categoryId}-${sub.subcategoryId ?? j}`}
-                                className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200"
-                              >
-                                <td className="px-4 py-3" />
-                                <td className="px-4 py-3 pl-10 text-gray-600 dark:text-gray-400">{sub.subcategoryName}</td>
-                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(sub.gastos)}</td>
-                                <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(sub.pctPeriodo)}</td>
-                                <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(sub.pctCategoria)}</td>
-                              </tr>
-                            ))}
-                          </React.Fragment>
-                        ))}
-                      </tbody>
-                    </table>
+                {/* Detalhamento: Receitas e Despesas em frames separados */}
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Detalhamento por categoria e subcategoria</h2>
+                  <div className="space-y-6">
+                    {/* Frame Receitas (verde) */}
+                    <section
+                      aria-labelledby="table-receitas-heading"
+                      className="rounded-xl border-2 border-emerald-300 dark:border-emerald-600 bg-white dark:bg-gray-800 shadow-sm overflow-hidden transition-all duration-200"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSectionExpanded('table-receita')}
+                        className="w-full flex items-center gap-2 p-4 sm:p-5 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset"
+                        aria-expanded={expandedSections.has('table-receita')}
+                        aria-label={expandedSections.has('table-receita') ? 'Recolher seção Receitas' : 'Expandir seção Receitas'}
+                      >
+                        {expandedSections.has('table-receita') ? (
+                          <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0" aria-hidden />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0" aria-hidden />
+                        )}
+                        <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" aria-hidden />
+                        <h3 id="table-receitas-heading" className="text-lg font-bold text-gray-900 dark:text-white">Receitas</h3>
+                      </button>
+                      {expandedSections.has('table-receita') && (
+                        <div className="px-4 sm:px-6 pb-4 sm:pb-6 border-t border-gray-100 dark:border-gray-700">
+                          <div className="overflow-x-auto pt-4">
+                            <table className="w-full text-sm" aria-labelledby="table-receitas-heading">
+                              <thead>
+                                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 text-left text-gray-600 dark:text-gray-400 uppercase tracking-wider text-xs font-bold">
+                                  <th className="px-4 py-3 w-10" scope="col" aria-label="Expandir ou recolher" />
+                                  <th className="px-4 py-3">Categoria</th>
+                                  <th className="px-4 py-3 text-right">Total Receitas</th>
+                                  <th className="px-4 py-3 text-right">% do Período</th>
+                                  <th className="px-4 py-3 text-right">% da Categoria</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {categoryBlocksReceita.map(block => {
+                                  const expandKey = `receita-${block.categoryId}`;
+                                  return (
+                                    <React.Fragment key={block.categoryId}>
+                                      <tr
+                                        className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200 bg-gray-50/80 dark:bg-gray-700/40 font-semibold"
+                                      >
+                                        <td className="px-4 py-3">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleCategoryExpanded(expandKey)}
+                                            className="p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 cursor-pointer transition-colors duration-200 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                                            aria-expanded={expandedCategoryIds.has(expandKey)}
+                                            aria-label={expandedCategoryIds.has(expandKey) ? `Recolher ${block.categoryName}` : `Expandir ${block.categoryName}`}
+                                          >
+                                            {expandedCategoryIds.has(expandKey) ? (
+                                              <ChevronDown className="w-5 h-5" aria-hidden />
+                                            ) : (
+                                              <ChevronRight className="w-5 h-5" aria-hidden />
+                                            )}
+                                          </button>
+                                        </td>
+                                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{block.categoryName}</td>
+                                        <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(block.gastos)}</td>
+                                        <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(block.pctPeriodo)}</td>
+                                        <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400">—</td>
+                                      </tr>
+                                      {expandedCategoryIds.has(expandKey) && block.subcategories.map((sub, j) => (
+                                        <tr
+                                          key={`${block.categoryId}-${sub.subcategoryId ?? j}`}
+                                          className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200"
+                                        >
+                                          <td className="px-4 py-3" />
+                                          <td className="px-4 py-3 pl-10 text-gray-600 dark:text-gray-400">{sub.subcategoryName}</td>
+                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(sub.gastos)}</td>
+                                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(sub.pctPeriodo)}</td>
+                                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(sub.pctCategoria)}</td>
+                                        </tr>
+                                      ))}
+                                    </React.Fragment>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          {semCategoriaReceita.gastos > 0 && (
+                            <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4">
+                              <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Sem categoria</h4>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 text-left text-gray-600 dark:text-gray-400 uppercase tracking-wider text-xs font-bold">
+                                      <th className="px-4 py-3 w-10" scope="col" />
+                                      <th className="px-4 py-3">Categoria</th>
+                                      <th className="px-4 py-3 text-right">Total Receitas</th>
+                                      <th className="px-4 py-3 text-right">% do Período</th>
+                                      <th className="px-4 py-3 text-right">% da Categoria</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {semCategoriaReceita.rows.map((row, i) => (
+                                      <tr key={i} className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200">
+                                        <td className="px-4 py-3" />
+                                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{row.subcategoryName}</td>
+                                        <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(row.gastos)}</td>
+                                        <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(row.pctPeriodo)}</td>
+                                        <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400">—</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+
+                    {/* Frame Despesas (vermelho) */}
+                    <section
+                      aria-labelledby="table-despesas-heading"
+                      className="rounded-xl border-2 border-red-300 dark:border-red-600 bg-white dark:bg-gray-800 shadow-sm overflow-hidden transition-all duration-200"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSectionExpanded('table-despesa')}
+                        className="w-full flex items-center gap-2 p-4 sm:p-5 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset"
+                        aria-expanded={expandedSections.has('table-despesa')}
+                        aria-label={expandedSections.has('table-despesa') ? 'Recolher seção Despesas por categoria' : 'Expandir seção Despesas por categoria'}
+                      >
+                        {expandedSections.has('table-despesa') ? (
+                          <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0" aria-hidden />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0" aria-hidden />
+                        )}
+                        <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" aria-hidden />
+                        <h3 id="table-despesas-heading" className="text-lg font-bold text-gray-900 dark:text-white">Despesas por categoria</h3>
+                      </button>
+                      {expandedSections.has('table-despesa') && (
+                        <div className="px-4 sm:px-6 pb-4 sm:pb-6 border-t border-gray-100 dark:border-gray-700">
+                          <div className="overflow-x-auto pt-4">
+                            <table className="w-full text-sm" aria-labelledby="table-despesas-heading">
+                              <thead>
+                                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 text-left text-gray-600 dark:text-gray-400 uppercase tracking-wider text-xs font-bold">
+                                  <th className="px-4 py-3 w-10" scope="col" aria-label="Expandir ou recolher" />
+                                  <th className="px-4 py-3">Categoria</th>
+                                  <th className="px-4 py-3 text-right">Total Despesas</th>
+                                  <th className="px-4 py-3 text-right">% do Período</th>
+                                  <th className="px-4 py-3 text-right">% da Categoria</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {categoryBlocksDespesa.map(block => {
+                                  const expandKey = `despesa-${block.categoryId}`;
+                                  return (
+                                    <React.Fragment key={block.categoryId}>
+                                      <tr
+                                        className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200 bg-gray-50/80 dark:bg-gray-700/40 font-semibold"
+                                      >
+                                        <td className="px-4 py-3">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleCategoryExpanded(expandKey)}
+                                            className="p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 cursor-pointer transition-colors duration-200 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                                            aria-expanded={expandedCategoryIds.has(expandKey)}
+                                            aria-label={expandedCategoryIds.has(expandKey) ? `Recolher ${block.categoryName}` : `Expandir ${block.categoryName}`}
+                                          >
+                                            {expandedCategoryIds.has(expandKey) ? (
+                                              <ChevronDown className="w-5 h-5" aria-hidden />
+                                            ) : (
+                                              <ChevronRight className="w-5 h-5" aria-hidden />
+                                            )}
+                                          </button>
+                                        </td>
+                                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{block.categoryName}</td>
+                                        <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(block.gastos)}</td>
+                                        <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(block.pctPeriodo)}</td>
+                                        <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400">—</td>
+                                      </tr>
+                                      {expandedCategoryIds.has(expandKey) && block.subcategories.map((sub, j) => (
+                                        <tr
+                                          key={`${block.categoryId}-${sub.subcategoryId ?? j}`}
+                                          className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200"
+                                        >
+                                          <td className="px-4 py-3" />
+                                          <td className="px-4 py-3 pl-10 text-gray-600 dark:text-gray-400">{sub.subcategoryName}</td>
+                                          <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(sub.gastos)}</td>
+                                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(sub.pctPeriodo)}</td>
+                                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(sub.pctCategoria)}</td>
+                                        </tr>
+                                      ))}
+                                    </React.Fragment>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          {semCategoriaDespesa.gastos > 0 && (
+                            <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4">
+                              <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Sem categoria</h4>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 text-left text-gray-600 dark:text-gray-400 uppercase tracking-wider text-xs font-bold">
+                                      <th className="px-4 py-3 w-10" scope="col" />
+                                      <th className="px-4 py-3">Categoria</th>
+                                      <th className="px-4 py-3 text-right">Total Despesas</th>
+                                      <th className="px-4 py-3 text-right">% do Período</th>
+                                      <th className="px-4 py-3 text-right">% da Categoria</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {semCategoriaDespesa.rows.map((row, i) => (
+                                      <tr key={i} className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200">
+                                        <td className="px-4 py-3" />
+                                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{row.subcategoryName}</td>
+                                        <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(row.gastos)}</td>
+                                        <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(row.pctPeriodo)}</td>
+                                        <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400">—</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
                   </div>
-                  {semCategoriaBlock.gastos > 0 && (
-                    <div className="border-t border-gray-200 dark:border-gray-700 mt-4">
-                      <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 px-4 sm:px-6 pt-4 pb-2">Sem categoria</h3>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 text-left text-gray-600 dark:text-gray-400 uppercase tracking-wider text-xs font-bold">
-                              <th className="px-4 py-3 w-10" scope="col" />
-                              <th className="px-4 py-3">Categoria</th>
-                              <th className="px-4 py-3 text-right">Total Gastos</th>
-                              <th className="px-4 py-3 text-right">% do Período</th>
-                              <th className="px-4 py-3 text-right">% da Categoria</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {semCategoriaBlock.rows.map((row, i) => (
-                              <tr key={i} className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-200">
-                                <td className="px-4 py-3" />
-                                <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{row.subcategoryName}</td>
-                                <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">{formatCurrency(row.gastos)}</td>
-                                <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{formatPct(row.pctPeriodo)}</td>
-                                <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400">—</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </>
             )}

@@ -1,6 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { Envelope } from '../types';
-import { transactionService } from './transactionService';
+import { Envelope, EnvelopeTransferPayload } from '../types';
 
 /** Mapeia erros do Supabase/Postgres para mensagens amigáveis (crud-standard: 400, 403, 404, 409, 500). */
 function toUserFriendlyError(error: { message?: string; code?: string; details?: string }): Error {
@@ -187,43 +186,106 @@ export const envelopeService = {
   },
 
   /**
-   * Transfere saldo entre envelopes.
-   * Cria dois lançamentos para garantir que o saldo seja recalculado corretamente e haja histórico.
+   * Transfere saldo entre envelopes sem criar lançamentos.
+   * Atualiza apenas envelopes.amount e grava log em envelope_transfer_log.
+   * Não altera totalizadores nem a tabela transactions.
    */
-  async transfer(fromId: string, toId: string, amount: number) {
+  async transferWithLog(payload: EnvelopeTransferPayload): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
-    const { data: envs } = await supabase
+    const {
+      transferDate,
+      originEnvelopeId,
+      originCategoryId,
+      originSubcategoryId,
+      destEnvelopeId,
+      destCategoryId,
+      destSubcategoryId,
+      amount,
+    } = payload;
+
+    if (amount <= 0) throw new Error('Valor deve ser maior que zero.');
+    if (originEnvelopeId === destEnvelopeId) {
+      throw new Error('Envelope origem e destino devem ser diferentes.');
+    }
+
+    const { data: envs, error: envError } = await supabase
       .from('envelopes')
-      .select('id, name, code')
-      .in('id', [fromId, toId]);
+      .select('id, amount')
+      .in('id', [originEnvelopeId, destEnvelopeId]);
 
-    const fromEnv = envs?.find(e => e.id === fromId);
-    const toEnv = envs?.find(e => e.id === toId);
+    if (envError) {
+      console.error('[envelopeService.transferWithLog] Erro ao buscar envelopes:', envError);
+      throw toUserFriendlyError(envError);
+    }
 
-    if (!fromEnv || !toEnv) throw new Error('Envelopes não encontrados');
+    const originEnv = envs?.find(e => e.id === originEnvelopeId);
+    const destEnv = envs?.find(e => e.id === destEnvelopeId);
 
-    const today = new Date().toISOString().split('T')[0];
+    if (!originEnv || !destEnv) throw new Error('Envelopes não encontrados.');
 
-    // 1. Cria a transação de DÉBITO no envelope de origem
-    await transactionService.create({
-      date: today,
-      type: 'debit',
-      description: `Transferência PARA: ${toEnv.code} - ${toEnv.name}`,
-      amount: amount,
-      envelopeId: fromId
-    });
+    const originBalance = Number(originEnv.amount ?? 0);
+    if (originBalance < amount) {
+      throw new Error('Saldo insuficiente no envelope de origem.');
+    }
 
-    // 2. Cria a transação de CRÉDITO no envelope de destino
-    await transactionService.create({
-      date: today,
-      type: 'credit',
-      description: `Transferência DE: ${fromEnv.code} - ${fromEnv.name}`,
-      amount: amount,
-      envelopeId: toId
-    });
-    
-    // O transactionService.create já chama internamente o _syncEnvelopeBalance para cada envelope.
-  }
+    const amountNum = Number(amount);
+    const originNewAmount = originBalance - amountNum;
+    const destBalance = Number(destEnv.amount ?? 0);
+    const destNewAmount = destBalance + amountNum;
+
+    const { error: updOriginError } = await supabase
+      .from('envelopes')
+      .update({ amount: originNewAmount, updated_at: new Date().toISOString() })
+      .eq('id', originEnvelopeId);
+
+    if (updOriginError) {
+      console.error('[envelopeService.transferWithLog] Erro ao debitar origem:', updOriginError);
+      throw toUserFriendlyError(updOriginError);
+    }
+
+    const { error: updDestError } = await supabase
+      .from('envelopes')
+      .update({ amount: destNewAmount, updated_at: new Date().toISOString() })
+      .eq('id', destEnvelopeId);
+
+    if (updDestError) {
+      console.error('[envelopeService.transferWithLog] Erro ao creditar destino:', updDestError);
+      await supabase
+        .from('envelopes')
+        .update({ amount: originBalance, updated_at: new Date().toISOString() })
+        .eq('id', originEnvelopeId);
+      throw toUserFriendlyError(updDestError);
+    }
+
+    const logPayload = {
+      user_id: user.id,
+      transfer_date: transferDate,
+      origin_envelope_id: originEnvelopeId,
+      origin_category_id: originCategoryId || null,
+      origin_subcategory_id: originSubcategoryId || null,
+      dest_envelope_id: destEnvelopeId,
+      dest_category_id: destCategoryId || null,
+      dest_subcategory_id: destSubcategoryId || null,
+      amount: amountNum,
+    };
+
+    const { error: logError } = await supabase
+      .from('envelope_transfer_log')
+      .insert([logPayload]);
+
+    if (logError) {
+      console.error('[envelopeService.transferWithLog] Erro ao gravar log:', logError);
+      await supabase
+        .from('envelopes')
+        .update({ amount: originBalance, updated_at: new Date().toISOString() })
+        .eq('id', originEnvelopeId);
+      await supabase
+        .from('envelopes')
+        .update({ amount: destBalance, updated_at: new Date().toISOString() })
+        .eq('id', destEnvelopeId);
+      throw toUserFriendlyError(logError);
+    }
+  },
 };

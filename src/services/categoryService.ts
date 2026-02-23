@@ -1,6 +1,6 @@
 
 import { supabase } from '../lib/supabase';
-import { Category, Subcategory } from '../types';
+import { Category, CategoryType, Subcategory } from '../types';
 
 export const categoryService = {
   /**
@@ -51,7 +51,7 @@ export const categoryService = {
   /**
    * Cria uma nova categoria e suas subcategorias.
    */
-  async create(name: string, subcategoryNames: string[]): Promise<void> {
+  async create(name: string, type: CategoryType, subcategoryNames: string[]): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
@@ -60,7 +60,8 @@ export const categoryService = {
       .from('categories')
       .insert([{
         user_id: user.id,
-        name: name.trim()
+        name: name.trim(),
+        type
       }])
       .select()
       .single();
@@ -99,14 +100,14 @@ export const categoryService = {
    * Atualiza uma categoria e gerencia a sincronização de subcategorias.
    * Nota: Simplificado para lidar com substituição completa de subs por enquanto.
    */
-  async update(id: string, name: string, subcategoryNames: string[]): Promise<void> {
+  async update(id: string, name: string, type: CategoryType, subcategoryNames: string[]): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
-    // 1. Atualizar nome da categoria
+    // 1. Atualizar nome e tipo da categoria
     const { error: catError } = await supabase
       .from('categories')
-      .update({ name: name.trim() })
+      .update({ name: name.trim(), type })
       .eq('id', id);
 
     if (catError) throw catError;

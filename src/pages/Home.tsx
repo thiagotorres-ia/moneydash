@@ -7,7 +7,7 @@ import { TransactionTable } from '../components/TransactionTable';
 import { Modal } from '../components/Modal';
 import { Button } from '../components/Button';
 import { useToast } from '../contexts/ToastContext';
-import { Category, Envelope, Transaction } from '../types';
+import { Category, Envelope, EnvelopeTransferPayload, Transaction } from '../types';
 import { envelopeService } from '../services/envelopeService';
 import { categoryService } from '../services/categoryService';
 import { transactionService } from '../services/transactionService';
@@ -218,15 +218,16 @@ const Home: React.FC = () => {
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <section>
-          <EnvelopeBoard 
-            envelopes={envelopes} 
+          <EnvelopeBoard
+            envelopes={envelopes}
             setEnvelopes={setEnvelopes}
-            onTransfer={async (f, t, a) => {
+            categories={categories}
+            onTransfer={async (payload: EnvelopeTransferPayload) => {
               setProcessing(p => ({ ...p, transfer: true }));
               try {
-                await envelopeService.transfer(f, t, a);
+                await envelopeService.transferWithLog(payload);
                 await fetchData(true);
-                addToast('Transferência ok!');
+                addToast('Transferência concluída!');
               } catch (e) {
                 const message = e instanceof Error ? e.message : 'Erro na transferência.';
                 addToast(message, 'error');

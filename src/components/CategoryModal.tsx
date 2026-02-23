@@ -6,7 +6,7 @@ import { Input } from './Input';
 import { Button } from './Button';
 import { categoryService } from '../services/categoryService';
 import { useToast } from '../contexts/ToastContext';
-import { Category } from '../types';
+import { Category, CategoryType } from '../types';
 
 const SAVE_TIMEOUT_MS = 15000;
 
@@ -20,6 +20,7 @@ interface CategoryModalProps {
 export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, onSuccess, category }) => {
   const { addToast } = useToast();
   const [name, setName] = useState('');
+  const [type, setType] = useState<CategoryType>('despesa');
   const [subCategories, setSubCategories] = useState<{ name: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -27,6 +28,7 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, o
     if (isOpen) {
       if (category) {
         setName(category.name);
+        setType(category.type ?? 'despesa');
         if (category.sub_categories && category.sub_categories.length > 0) {
           setSubCategories(category.sub_categories.map(s => ({ name: s.name })));
         } else {
@@ -34,6 +36,7 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, o
         }
       } else {
         setName('');
+        setType('despesa');
         setSubCategories([{ name: '' }]);
       }
     }
@@ -63,6 +66,10 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, o
       addToast('O nome da categoria é obrigatório.', 'error');
       return;
     }
+    if (type !== 'despesa' && type !== 'receita') {
+      addToast('Selecione o tipo da categoria (Despesa ou Receita).', 'error');
+      return;
+    }
 
     const filteredSubs = subCategories
       .map(s => s.name.trim())
@@ -74,8 +81,8 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, o
         setTimeout(() => reject(new Error('timeout')), SAVE_TIMEOUT_MS)
       );
       const savePromise = category
-        ? categoryService.update(category.id, name.trim(), filteredSubs)
-        : categoryService.create(name.trim(), filteredSubs);
+        ? categoryService.update(category.id, name.trim(), type, filteredSubs)
+        : categoryService.create(name.trim(), type, filteredSubs);
 
       await Promise.race([savePromise, timeoutPromise]);
 
@@ -110,6 +117,22 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, o
           disabled={isLoading}
         />
 
+        <div>
+          <label htmlFor="category-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Tipo da categoria
+          </label>
+          <select
+            id="category-type"
+            value={type}
+            onChange={e => setType(e.target.value as CategoryType)}
+            disabled={isLoading}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 min-h-[44px] cursor-pointer transition-colors duration-200 disabled:opacity-60"
+          >
+            <option value="despesa">Despesa</option>
+            <option value="receita">Receita</option>
+          </select>
+        </div>
+
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -119,7 +142,7 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, o
               type="button" 
               onClick={handleAddSub}
               disabled={isLoading}
-              className="text-xs flex items-center gap-1 text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50"
+              className="text-xs flex items-center gap-1 text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50 cursor-pointer transition-colors duration-200"
             >
               <Plus className="w-3 h-3" /> Adicionar
             </button>
@@ -140,7 +163,7 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({ isOpen, onClose, o
                   type="button" 
                   onClick={() => handleRemoveSub(index)}
                   disabled={isLoading}
-                  className="p-2 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                  className="p-2 text-gray-400 hover:text-red-500 transition-colors duration-200 disabled:opacity-50 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>

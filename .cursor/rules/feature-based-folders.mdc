@@ -1,0 +1,139 @@
+---
+description: Feature-Based Folder Structure — enforces domain-driven code organization for all code generation and refactoring
+globs: ["src/**/*"]
+alwaysApply: true
+---
+
+# Feature-Based Folder Structure
+
+## Princípio Central
+
+Todo código deve ser organizado por **domínio de negócio**, não por tipo técnico.  
+Cada feature é uma unidade isolada e autocontida. Nada de `components/`, `hooks/`, `services/` na raiz de `src/`.
+
+---
+
+## Estrutura Obrigatória
+
+```
+src/
+  features/
+    <feature-name>/
+      components/       # componentes exclusivos desta feature
+      hooks/            # hooks exclusivos desta feature
+      services/         # chamadas de API, regras de negócio
+      store/            # estado local (zustand, redux slice, context)
+      types/            # interfaces e types desta feature
+      utils/            # helpers exclusivos desta feature
+      index.ts          # ← PUBLIC API: único ponto de exportação
+  shared/
+    components/         # componentes genuinamente reutilizáveis (sem lógica de negócio)
+    hooks/              # hooks genéricos (ex: useDebounce, useMediaQuery)
+    utils/              # funções utilitárias puras
+    types/              # types globais e compartilhados
+    lib/                # configurações de libs externas (axios instance, queryClient)
+  app/                  # rotas e configuração global (Next.js app/, React Router, etc.)
+```
+
+---
+
+## Regras de Ouro
+
+### 1. Isolamento entre features
+- Features **nunca** importam de internals umas das outras
+- A comunicação entre features ocorre **exclusivamente** via `index.ts`
+
+```ts
+// ✅ CORRETO
+import { useUser, UserCard } from '@/features/user'
+
+// ❌ ERRADO — jamais acesse internals de outra feature
+import { UserCard } from '@/features/user/components/UserCard'
+import { useUser } from '@/features/user/hooks/useUser'
+```
+
+### 2. O index.ts é o contrato público
+- Cada feature **deve** ter um `index.ts`
+- Apenas o que está exportado no `index.ts` é considerado público
+- Internals não exportados são privados da feature
+
+```ts
+// src/features/user/index.ts
+export { UserCard } from './components/UserCard'
+export { UserProfile } from './components/UserProfile'
+export { useUser } from './hooks/useUser'
+export type { User, UserRole } from './types/user.types'
+// ❌ NÃO exporte helpers internos desnecessários
+```
+
+### 3. Shared só para código verdadeiramente genérico
+- Se um componente ou hook **depende de lógica de negócio**, ele pertence a uma feature
+- `shared/` é para código que poderia existir em **qualquer projeto**
+
+```ts
+// ✅ vai em shared/ — genérico
+export function useDebounce(value: string, delay: number) { ... }
+export function Button({ children, onClick }: ButtonProps) { ... }
+
+// ❌ não vai em shared/ — tem lógica de negócio
+export function useUserPermissions() { ... }  // → features/user/hooks/
+export function ProductBadge() { ... }        // → features/product/components/
+```
+
+### 4. Nomenclatura consistente
+- Pasta da feature: `kebab-case` → `user`, `shopping-cart`, `product-catalog`
+- Componentes: `PascalCase` → `UserCard.tsx`
+- Hooks: `camelCase` com prefixo `use` → `useUser.ts`
+- Services: `camelCase` com sufixo `Service` ou `Api` → `userService.ts`
+- Types: `camelCase` com sufixo `.types` → `user.types.ts`
+
+---
+
+## Ao Criar Código Novo
+
+Antes de gerar qualquer arquivo, responda:
+
+1. **Esta lógica pertence a um domínio específico?** → cria ou usa uma feature existente
+2. **É genérico e sem lógica de negócio?** → vai em `shared/`
+3. **É configuração de rota ou app?** → vai em `app/`
+
+Ao criar uma nova feature, **sempre** gere a estrutura completa:
+
+```
+src/features/<nome>/
+  components/     (se houver UI)
+  hooks/          (se houver lógica reativa)
+  services/       (se houver chamadas externas)
+  types/
+    <nome>.types.ts
+  index.ts        ← obrigatório sempre
+```
+
+---
+
+## Reestruturação de Código Existente
+
+Ao mover ou refatorar código já existente para este padrão, siga esta ordem:
+
+1. **Mapeie os domínios** — identifique as features existentes no código atual
+2. **Crie as pastas** de cada feature dentro de `src/features/`
+3. **Mova os arquivos** agrupando por domínio, não por tipo
+4. **Crie os `index.ts`** de cada feature com as exportações públicas
+5. **Atualize os imports** em todo o projeto para usar apenas os `index.ts`
+6. **Mova para `shared/`** apenas o que for genuinamente genérico
+7. **Valide** que não existe nenhum import apontando para internals de outra feature
+
+---
+
+## Anti-Patterns — Nunca Faça
+
+```
+❌ src/components/UserCard.tsx         (organização por tipo na raiz)
+❌ src/hooks/useProduct.ts             (idem)
+❌ src/services/orderService.ts        (idem)
+❌ import { X } from '@/features/user/hooks/useUser'   (import de internal)
+❌ Colocar lógica de negócio em shared/
+❌ Feature sem index.ts
+❌ Um componente gigante que mistura múltiplos domínios
+```
+
