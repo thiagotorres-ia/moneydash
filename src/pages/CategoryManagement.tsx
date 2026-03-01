@@ -3,9 +3,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navbar } from '../components/Navbar';
 import { categoryService } from '../services/categoryService';
 import { Category } from '../types';
-import { useToast } from '../contexts/ToastContext';
+import { useToast } from '@/shared';
 import { Loader2, Pencil, Trash2, ChevronDown, ChevronRight, FolderTree, Tag, AlertTriangle } from 'lucide-react';
-import { Button } from '../components/Button';
+import { Button } from '@/shared';
 import { CategoryModal } from '../components/CategoryModal';
 
 const sortByName = (a: { name: string }, b: { name: string }) =>
@@ -20,10 +20,10 @@ function withSortedSubcategories(cat: Category): Category {
 interface CategoryRowProps {
   cat: Category;
   expandedIds: Set<string>;
-  toggleExpand: (id: string) => void;
-  setEditingCategory: (c: Category | null) => void;
-  setIsModalOpen: (open: boolean) => void;
-  handleDelete: (id: string) => void;
+  toggleExpand: (_id: string) => void;
+  setEditingCategory: (_c: Category | null) => void;
+  setIsModalOpen: (_open: boolean) => void;
+  handleDelete: (_id: string) => void;
   typeLabel: string;
   badgeClassName: string;
 }
@@ -172,7 +172,7 @@ const CategoryManagement: React.FC = () => {
       await categoryService.delete(id);
       addToast('Categoria removida com sucesso!', 'success');
       fetchCategories();
-    } catch (err) {
+    } catch (_err) {
       addToast('Erro ao remover categoria.', 'error');
     }
   };

@@ -1,17 +1,15 @@
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Navbar } from '../components/Navbar';
 import { EnvelopeBoard } from '../components/EnvelopeBoard';
 import { FinancialSummary } from '../components/FinancialSummary';
 import { TransactionTable } from '../components/TransactionTable';
-import { Modal } from '../components/Modal';
-import { Button } from '../components/Button';
-import { useToast } from '../contexts/ToastContext';
+import { Modal, Button, useToast } from '@/shared';
 import { Category, Envelope, EnvelopeTransferPayload, Transaction } from '../types';
 import { envelopeService } from '../services/envelopeService';
 import { categoryService } from '../services/categoryService';
 import { transactionService } from '../services/transactionService';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/shared';
 import { useAuth } from '../contexts/AuthContext';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 
@@ -95,6 +93,7 @@ const Home: React.FC = () => {
       supabase.removeChannel(envChannel);
       supabase.removeChannel(txChannel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id and fetchData are intentional; full user would trigger extra runs
   }, [user?.id, fetchData]);
 
   const handleBulkDeleteTransactions = async (ids: string[]) => {
@@ -146,7 +145,7 @@ const Home: React.FC = () => {
       await transactionService.bulkUpdateCategory(ids, categoryId, subcategoryId);
       await fetchData(true);
       addToast('Categoria atribuída aos lançamentos.', 'success');
-    } catch (e) {
+    } catch (_e) {
       addToast('Erro ao atribuir categoria.', 'error');
     } finally {
       if (isMounted.current) setProcessing(p => ({ ...p, bulkUpdate: false }));
@@ -159,7 +158,7 @@ const Home: React.FC = () => {
       await transactionService.create(data);
       await fetchData(true);
       addToast('Lançamento adicionado!', 'success');
-    } catch (e) { addToast('Erro ao criar lançamento.', 'error'); }
+    } catch (_e) { addToast('Erro ao criar lançamento.', 'error'); }
     finally { setProcessing(p => ({ ...p, createTransaction: false })); }
   };
 
@@ -169,7 +168,7 @@ const Home: React.FC = () => {
       await transactionService.update(id, data);
       await fetchData(true);
       addToast('Lançamento atualizado!', 'success');
-    } catch (e) { addToast('Erro ao atualizar lançamento.', 'error'); }
+    } catch (_e) { addToast('Erro ao atualizar lançamento.', 'error'); }
     finally { setProcessing(p => ({ ...p, updateTransaction: false })); }
   };
 
@@ -181,7 +180,7 @@ const Home: React.FC = () => {
       setTransactionToDelete(null);
       await fetchData(true);
       addToast('Lançamento excluído.', 'success');
-    } catch (e) { addToast('Erro ao excluir.', 'error'); }
+    } catch (_e) { addToast('Erro ao excluir.', 'error'); }
     finally { if (isMounted.current) setProcessing(p => ({ ...p, deleteTransaction: false })); }
   };
 
@@ -280,12 +279,12 @@ const Home: React.FC = () => {
             onBulkDelete={handleBulkDeleteTransactions}
             onUpdateEnvelope={async (txId, envId) => {
               try { await transactionService.updateEnvelope(txId, envId || null); await fetchData(true); addToast('Atualizado!'); }
-              catch(e) { addToast('Erro ao atualizar', 'error'); }
+              catch(_e) { addToast('Erro ao atualizar', 'error'); }
             }}
             onBulkUpdateEnvelope={handleBulkUpdateTransactions}
             onUpdateCategory={async (txId, catId, subId) => {
               try { await transactionService.updateCategory(txId, catId || null, subId || null); await fetchData(true); addToast('Categoria atualizada!'); }
-              catch(e) { addToast('Erro ao atualizar categoria.', 'error'); }
+              catch(_e) { addToast('Erro ao atualizar categoria.', 'error'); }
             }}
             onBulkUpdateCategory={handleBulkUpdateCategory}
             onAddTransaction={handleCreateTransaction}

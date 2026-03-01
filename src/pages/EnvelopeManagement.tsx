@@ -3,13 +3,10 @@ import { Navbar } from '../components/Navbar';
 import { envelopeService } from '../services/envelopeService';
 import { envelopeTypeService } from '../services/envelopeTypeService';
 import { Envelope, EnvelopeTypeRecord } from '../types';
-import { useToast } from '../contexts/ToastContext';
-import { formatCurrency } from '../utils/format';
+import { useToast, formatCurrency } from '@/shared';
 import { Loader2, Pencil, Trash2, Eye, LayoutGrid, AlertTriangle, Wallet, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button } from '../components/Button';
+import { Button, Modal, Input } from '@/shared';
 import { EnvelopeModal } from '../components/EnvelopeModal';
-import { Modal } from '../components/Modal';
-import { Input } from '../components/Input';
 
 type BalanceFilter = 'all' | 'zero' | 'positive' | 'negative';
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50] as const;

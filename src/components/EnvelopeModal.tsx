@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal } from './Modal';
-import { Input } from './Input';
-import { Button } from './Button';
+import { Modal, Input, Button, useToast } from '@/shared';
 import { envelopeService } from '../services/envelopeService';
-import { useToast } from '../contexts/ToastContext';
 import { Envelope, EnvelopeTypeRecord } from '../types';
 
 interface EnvelopeModalProps {

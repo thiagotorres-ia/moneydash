@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/shared';
 import { Envelope, EnvelopeTransferPayload } from '../types';
 
 /** Mapeia erros do Supabase/Postgres para mensagens amigáveis (crud-standard: 400, 403, 404, 409, 500). */

@@ -1,6 +1,5 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { Button } from './Button';
 
 interface ModalProps {
   isOpen: boolean;
@@ -33,7 +32,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0">
           {children}
         </div>

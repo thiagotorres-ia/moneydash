@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
-import { ToastContextType, Toast, ToastType } from '../types';
+import type { ToastContextType, Toast, ToastType } from '../types/shared.types';
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
@@ -24,7 +24,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={{ addToast, removeToast }}>
       {children}
-      
+
       {/* Toast Container */}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => (
@@ -42,7 +42,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-red-500" />}
               {toast.type === 'info' && <Info className="w-5 h-5 text-blue-500" />}
             </div>
-            
+
             <p className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-100">
               {toast.message}
             </p>

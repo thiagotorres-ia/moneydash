@@ -2,9 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { LogOut, Menu, X, RefreshCw, Home, FolderTree, Layers, Wallet, Database, BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
-import { ThemeToggle } from './ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
-import { APP_NAME } from '../constants';
+import { ThemeToggle, APP_NAME } from '@/shared';
 import { Logo } from './Logo';
 
 const ENTIDADES_PATHS = ['/categorias', '/envelopes', '/tipos-envelope'];

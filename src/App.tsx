@@ -2,16 +2,14 @@
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
-import { ThemeProvider } from './contexts/ThemeContext';
+import { ThemeProvider, ToastProvider, RouteErrorBoundary } from '@/shared';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
 import Home from './pages/Home';
 import CategoryManagement from './pages/CategoryManagement';
 import EnvelopeTypeManagement from './pages/EnvelopeTypeManagement';
 import EnvelopeManagement from './pages/EnvelopeManagement';
 import SpendingByCategoryReport from './pages/SpendingByCategoryReport';
-import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 
 const FullPageLoader = () => (
   <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center text-primary-600">

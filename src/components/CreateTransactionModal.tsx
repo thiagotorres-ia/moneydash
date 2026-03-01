@@ -1,16 +1,11 @@
 import React, { useState } from 'react';
-import { Calendar, DollarSign, Tag, AlignLeft, CreditCard } from 'lucide-react';
-import { Modal } from './Modal';
-import { Button } from './Button';
-import { Input } from './Input';
-import { SearchableSelect } from './SearchableSelect';
+import { Modal, Button, Input, SearchableSelect, useToast } from '@/shared';
 import { Envelope, TransactionType } from '../types';
-import { useToast } from '../contexts/ToastContext';
 
 interface CreateTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (data: any) => Promise<void>;
+  onSuccess: (_data: any) => Promise<void>;
   envelopes: Envelope[];
   isLoading?: boolean;
 }

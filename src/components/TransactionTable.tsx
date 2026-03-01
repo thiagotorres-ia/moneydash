@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { 
   Search, Trash2, Plus, Pencil,
   RefreshCw, ChevronDown, ArrowUp, ArrowDown,
@@ -10,13 +10,8 @@ import * as ReactWindow from 'react-window';
 // @ts-ignore
 import AutoSizerModule from 'react-virtualized-auto-sizer';
 import { Transaction, Envelope, Category } from '../types';
-import { formatCurrency, formatDate } from '../utils/format';
-import { Button } from './Button';
-import { Modal } from './Modal';
-import { useToast } from '../contexts/ToastContext';
-import { SearchableSelect } from './SearchableSelect';
+import { formatCurrency, formatDate, Button, Modal, useToast, SearchableSelect, ConfirmModal } from '@/shared';
 import { TransactionModal } from './TransactionModal';
-import { ConfirmModal } from './ConfirmModal';
 
 const List = (ReactWindow as any).FixedSizeList;
 const AutoSizer = (AutoSizerModule as any).default || AutoSizerModule;
@@ -27,14 +22,14 @@ interface TransactionTableProps {
   transactions: Transaction[];
   envelopes: Envelope[];
   categories: Category[];
-  onDelete: (id: string) => void;
-  onBulkDelete: (ids: string[]) => Promise<void>;
-  onUpdateEnvelope: (txId: string, envId: string | null) => void | Promise<void>;
-  onBulkUpdateEnvelope: (ids: string[], envId: string | null) => Promise<void>;
-  onUpdateCategory: (txId: string, categoryId: string | null, subcategoryId: string | null) => void | Promise<void>;
-  onBulkUpdateCategory: (ids: string[], categoryId: string | null, subcategoryId: string | null) => Promise<void>;
-  onAddTransaction: (data: any) => Promise<void>;
-  onUpdateTransaction: (id: string, data: any) => Promise<void>;
+  onDelete: (_id: string) => void;
+  onBulkDelete: (_ids: string[]) => Promise<void>;
+  onUpdateEnvelope: (_txId: string, _envId: string | null) => void | Promise<void>;
+  onBulkUpdateEnvelope: (_ids: string[], _envId: string | null) => Promise<void>;
+  onUpdateCategory: (_txId: string, _categoryId: string | null, _subcategoryId: string | null) => void | Promise<void>;
+  onBulkUpdateCategory: (_ids: string[], _categoryId: string | null, _subcategoryId: string | null) => Promise<void>;
+  onAddTransaction: (_data: any) => Promise<void>;
+  onUpdateTransaction: (_id: string, _data: any) => Promise<void>;
   onRefresh: () => void | Promise<void>;
   isAdding: boolean;
   isUpdating: boolean;
@@ -245,7 +240,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string>('');
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -284,11 +279,13 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
     return res;
   }, [transactions, textFilter, showOnlyUnallocated, showOnlyUncategorized]);
 
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    setSelectedIds(next);
-  };
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const toggleSelectAll = () => {
     if (selectedIds.size === filteredTransactions.length && filteredTransactions.length > 0) {
@@ -390,7 +387,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
     sortedEnvelopes,
     categoryOptionsForSelect,
     getSubcategoryOptions
-  }), [filteredTransactions, envelopes, categories, selectedIds, editingTxId, editingCategoryTxId, pendingCategoryId, onUpdateEnvelope, onUpdateCategory, onDelete, sortedEnvelopes, categoryOptionsForSelect, getSubcategoryOptions]);
+  }), [filteredTransactions, envelopes, categories, selectedIds, editingTxId, editingCategoryTxId, pendingCategoryId, onUpdateEnvelope, onUpdateCategory, onDelete, sortedEnvelopes, categoryOptionsForSelect, getSubcategoryOptions, toggleSelect]);
 
   const allSelected = selectedIds.size === filteredTransactions.length && filteredTransactions.length > 0;
 

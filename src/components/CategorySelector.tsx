@@ -6,7 +6,7 @@ import { categoryService } from '../services/categoryService';
 
 interface CategorySelectorProps {
   value: { categoryId: string | null; subcategoryId: string | null };
-  onChange: (categoryId: string | null, subcategoryId: string | null) => void;
+  onChange: (_categoryId: string | null, _subcategoryId: string | null) => void;
   onClose?: () => void;
 }
 

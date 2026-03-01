@@ -16,11 +16,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { ArrowRightLeft, Plus, Pencil, Trash2, LayoutGrid } from 'lucide-react';
 import { Category, Envelope, EnvelopeTransferPayload, EnvelopeTypeRecord } from '../types';
-import { formatCurrency } from '../utils/format';
-import { Button } from './Button';
-import { Modal } from './Modal';
-import { Input } from './Input';
-import { SearchableSelect } from './SearchableSelect';
+import { formatCurrency } from '@/shared';
+import { Button, Modal, Input, SearchableSelect } from '@/shared';
 import { envelopeTypeService } from '../services/envelopeTypeService';
 
 const BORDER_COLORS = [
@@ -38,8 +35,8 @@ const ITEMS_PER_PAGE = 24;
 interface EnvelopeProps {
   envelope: Envelope;
   typeIndex: number;
-  onEdit: (envelope: Envelope) => void;
-  onDelete: (envelope: Envelope) => void;
+  onEdit: (_envelope: Envelope) => void;
+  onDelete: (_envelope: Envelope) => void;
 }
 
 const SortableEnvelopeCard: React.FC<EnvelopeProps> = ({
@@ -131,12 +128,12 @@ const SortableEnvelopeCard: React.FC<EnvelopeProps> = ({
 
 interface EnvelopeBoardProps {
   envelopes: Envelope[];
-  setEnvelopes: (envelopes: Envelope[]) => void;
+  setEnvelopes: (_envelopes: Envelope[]) => void;
   categories: Category[];
-  onTransfer: (payload: EnvelopeTransferPayload) => Promise<void>;
-  onCreateEnvelope: (data: { code: string; name: string; envelope_type_id: string }) => void;
-  onEditEnvelope: (id: string, code: string, name: string, envelope_type_id: string) => void;
-  onDeleteEnvelope: (id: string) => void;
+  onTransfer: (_payload: EnvelopeTransferPayload) => Promise<void>;
+  onCreateEnvelope: (_data: { code: string; name: string; envelope_type_id: string }) => void;
+  onEditEnvelope: (_id: string, _code: string, _name: string, _envelope_type_id: string) => void;
+  onDeleteEnvelope: (_id: string) => void;
   isCreating: boolean;
   isEditing: boolean;
   isDeleting: boolean;

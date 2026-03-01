@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { AuthContextType, User } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/shared';
 
 /** Timeout do login. "Tempo esgotado" pode ser causado por rede lenta ou Supabase indisponível; aumentar se necessário (ex.: 25000). */
 const LOGIN_TIMEOUT_MS = 20000;
@@ -28,7 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: profile?.name || metadata?.name || 'Usuário',
         avatar: profile?.avatar_url || metadata?.avatar_url
       };
-    } catch (err) {
+    } catch (_err) {
       return {
         id,
         email: email,
@@ -100,6 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe();
       if (initializationTimeout.current) window.clearTimeout(initializationTimeout.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isLoading intentionally omitted to avoid re-running on loading change
   }, [fetchProfile]);
 
   const login = useCallback(async (email: string, pass: string) => {

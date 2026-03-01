@@ -12,16 +12,15 @@ import { CSS } from '@dnd-kit/utilities';
 import { Navbar } from '../components/Navbar';
 import { envelopeTypeService } from '../services/envelopeTypeService';
 import { EnvelopeTypeRecord } from '../types';
-import { useToast } from '../contexts/ToastContext';
+import { useToast } from '@/shared';
 import { Loader2, Pencil, Trash2, Layers, GripVertical, AlertTriangle, Tag } from 'lucide-react';
-import { Button } from '../components/Button';
+import { Button, Modal } from '@/shared';
 import { EnvelopeTypeModal } from '../components/EnvelopeTypeModal';
-import { Modal } from '../components/Modal';
 
 interface SortableTypeRowProps {
   item: EnvelopeTypeRecord;
-  onEdit: (item: EnvelopeTypeRecord) => void;
-  onDelete: (item: EnvelopeTypeRecord) => void;
+  onEdit: (_item: EnvelopeTypeRecord) => void;
+  onDelete: (_item: EnvelopeTypeRecord) => void;
 }
 
 const SortableTypeRow: React.FC<SortableTypeRowProps> = ({ item, onEdit, onDelete }) => {

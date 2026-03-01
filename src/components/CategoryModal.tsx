@@ -1,11 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { Modal } from './Modal';
-import { Input } from './Input';
-import { Button } from './Button';
+import { Modal, Input, Button, useToast } from '@/shared';
 import { categoryService } from '../services/categoryService';
-import { useToast } from '../contexts/ToastContext';
 import { Category, CategoryType } from '../types';
 
 const SAVE_TIMEOUT_MS = 15000;

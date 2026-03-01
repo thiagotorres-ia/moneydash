@@ -1,5 +1,5 @@
 
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/shared';
 import { Category, CategoryType, Subcategory } from '../types';
 
 export const categoryService = {

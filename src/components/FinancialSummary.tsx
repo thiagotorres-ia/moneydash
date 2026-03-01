@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { PieChart, CheckCircle2, Wallet, AlertCircle } from 'lucide-react';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency } from '@/shared';
 import { Transaction } from '../types';
 
 interface FinancialSummaryProps {

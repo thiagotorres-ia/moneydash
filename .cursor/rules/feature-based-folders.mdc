@@ -1,6 +1,5 @@
 ---
-description: Feature-Based Folder Structure — enforces domain-driven code organization for all code generation and refactoring
-globs: ["src/**/*"]
+description: Apply when creating, moving, or refactoring any file to enforce domain-driven folder organization
 alwaysApply: true
 ---
 

@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Modal } from './Modal';
-import { Button } from './Button';
-import { Input } from './Input';
-import { SearchableSelect } from './SearchableSelect';
+import { Modal, Button, Input, SearchableSelect } from '@/shared';
 import { Category, Envelope, Transaction, TransactionType } from '../types';
-import { useToast } from '../contexts/ToastContext';
+import { useToast } from '@/shared';
 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (data: any, id?: string) => Promise<void>;
+  onSuccess: (_data: any, _id?: string) => Promise<void>;
   envelopes: Envelope[];
   categories: Category[];
   transaction?: Transaction | null;

@@ -8,8 +8,8 @@ export interface User {
 export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  login: (email: string, pass: string) => Promise<void>;
-  signup: (email: string, pass: string, name: string) => Promise<void>;
+  login: (_email: string, _pass: string) => Promise<void>;
+  signup: (_email: string, _pass: string, _name: string) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
   error: string | null;
@@ -121,6 +121,6 @@ export interface Toast {
 }
 
 export interface ToastContextType {
-  addToast: (message: string, type?: ToastType) => void;
-  removeToast: (id: string) => void;
+  addToast: (_message: string, _type?: ToastType) => void;
+  removeToast: (_id: string) => void;
 }

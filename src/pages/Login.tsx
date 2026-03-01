@@ -1,10 +1,7 @@
 import React, { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Input } from '../components/Input';
-import { Button } from '../components/Button';
-import { ThemeToggle } from '../components/ThemeToggle';
-import { APP_NAME } from '../constants';
+import { Input, Button, ThemeToggle, APP_NAME } from '@/shared';
 import { Logo } from '../components/Logo';
 
 const Login: React.FC = () => {
@@ -35,7 +32,7 @@ const Login: React.FC = () => {
 
     try {
       await login(email, password);
-    } catch (err) {
+    } catch (_err) {
       // Erro já tratado no contexto
     }
   };

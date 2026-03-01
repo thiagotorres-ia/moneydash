@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/shared';
 import { EnvelopeTypeRecord } from '../types';
 
 function toUserFriendlyError(error: { message?: string; code?: string }): Error {

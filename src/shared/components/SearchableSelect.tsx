@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, ChevronDown } from 'lucide-react';
-import { Envelope } from '../types';
+
+/** Options for the select: id and name required; code and envelope_type_name optional for display. */
+export interface SearchableSelectOption {
+  id: string;
+  name: string;
+  code?: string;
+  envelope_type_name?: string;
+}
 
 interface SearchableSelectProps {
-  options: Envelope[];
+  options: SearchableSelectOption[];
   value: string;
-  onChange: (value: string) => void;
+  onChange: (_value: string) => void;
   placeholder?: string;
   emptyOptionLabel?: string;
   className?: string;
@@ -89,7 +96,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     const search = searchTerm.toLowerCase();
     return (
       opt.name.toLowerCase().includes(search) ||
-      opt.code.toLowerCase().includes(search)
+      (opt.code ?? '').toLowerCase().includes(search)
     );
   });
 
@@ -188,7 +195,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 )}
               </div>
               <span className="text-xs bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded text-gray-600 dark:text-gray-300 font-mono font-bold flex-shrink-0">
-                {opt.code}
+                {opt.code ?? opt.id}
               </span>
             </div>
           ))
@@ -216,7 +223,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         `}
       >
         <span className={`truncate ${!selectedOption && !(emptyOptionLabel && value === '') ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100 font-medium'}`}>
-          {selectedOption ? `${selectedOption.code} - ${selectedOption.name}` : emptyOptionLabel && value === '' ? emptyOptionLabel : placeholder}
+          {selectedOption ? `${selectedOption.code ?? selectedOption.id} - ${selectedOption.name}` : emptyOptionLabel && value === '' ? emptyOptionLabel : placeholder}
         </span>
         <ChevronDown className={`w-4 h-4 text-gray-400 ml-2 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </div>
